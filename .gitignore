@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# エディタ・IDE
+.idea/
+.vscode/
+*.iml
+
+# 実測ログ（端末から取り出した検証データはコミットしない）
+*.jsonl
