@@ -7,6 +7,8 @@ includes:
     taskfile: taskfiles/Database.yml
   api:
     taskfile: taskfiles/API.yml
+  dart:
+    taskfile: taskfiles/Dart.yml
 
 tasks:
   default:

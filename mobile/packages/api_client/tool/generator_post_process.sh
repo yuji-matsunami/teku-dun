@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+# This deterministic post-process is part of the generation pipeline. Generated
+# files must not be edited by hand; change this script when the generated
+# package policy needs to change.
+set -euo pipefail
+
+package_dir="${1:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
+gitignore_path="$package_dir/.gitignore"
+analysis_options_path="$package_dir/analysis_options.yaml"
+
+rewrite_file() {
+  local path="$1"
+  shift
+  local temporary_path
+  temporary_path="$(mktemp "$package_dir/.generator-post-process.XXXXXX")"
+  if ! "$@" <"$path" >"$temporary_path"; then
+    rm -f "$temporary_path"
+    return 1
+  fi
+  if ! cmp -s "$path" "$temporary_path"; then
+    mv "$temporary_path" "$path"
+  else
+    rm -f "$temporary_path"
+  fi
+}
+
+append_pubspec_lock_exception() {
+  awk '$0 != "!pubspec.lock" { print } END { print "!pubspec.lock" }'
+}
+
+remove_generated_test_exclude_and_ignore_unused_import() {
+  awk '
+    /^  exclude:[[:space:]]*$/ {
+      in_exclude = 1
+      next
+    }
+    in_exclude {
+      if ($0 ~ /^    - test\/\*\.dart[[:space:]]*$/) {
+        in_exclude = 0
+      }
+      next
+    }
+    /^    # OpenAPI Generator emits imports unused by small schemas\.$/ {
+      next
+    }
+    /^    unused_import:[[:space:]]*ignore[[:space:]]*$/ {
+      next
+    }
+    /^  errors:[[:space:]]*$/ {
+      print
+      print "    # OpenAPI Generator emits imports unused by small schemas."
+      print "    unused_import: ignore"
+      errors_seen = 1
+      next
+    }
+    { print }
+    END {
+      if (!errors_seen) {
+        print ""
+        print "analyzer:"
+        print "  errors:"
+        print "    # OpenAPI Generator emits imports unused by small schemas."
+        print "    unused_import: ignore"
+      }
+    }
+  '
+}
+
+rewrite_file "$gitignore_path" append_pubspec_lock_exception
+rewrite_file "$analysis_options_path" remove_generated_test_exclude_and_ignore_unused_import
+
+# Normalize template whitespace so repository-wide diff checks stay useful
+# without hand-editing generated Dart or Markdown files.
+while IFS= read -r -d '' generated_file; do
+  rewrite_file "$generated_file" awk '
+    {
+      sub(/[[:space:]]+$/, "")
+      lines[NR] = $0
+      if ($0 != "") {
+        last_nonempty = NR
+      }
+    }
+    END {
+      for (line = 1; line <= last_nonempty; line++) {
+        print lines[line]
+      }
+    }
+  '
+done < <(find "$package_dir" -path "$package_dir/.dart_tool" -prune -o -type f \( -name '*.dart' -o -name '*.md' \) -print0)
