@@ -1,0 +1,100 @@
+version: '3'
+
+vars:
+  API_DIR: '{{.API_DIR | default "api"}}'
+  API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC | default "openapi/openapi.yaml"}}'
+  OAPI_CODEGEN_MODULE: 'github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen'
+
+tasks:
+  generate:
+    desc: OpenAPIからGoサーバコードを生成する
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      API_DIR: '{{.API_DIR}}'
+      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    cmds:
+      - |
+        set -u
+        cd "$ROOT_DIR/$API_DIR"
+        go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
+          --config oapi-codegen.yaml \
+          "$ROOT_DIR/$API_DIR/../$API_OPENAPI_SPEC"
+
+  generate-check:
+    desc: OpenAPIからのGo生成物にドリフトがないことを検査する
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      API_DIR: '{{.API_DIR}}'
+      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    cmds:
+      - |
+        set -u
+        cd "$ROOT_DIR/$API_DIR"
+        tmp_dir=''
+        cleanup() {
+          exit_code=$?
+          if [ -n "$tmp_dir" ] && [ -d "$tmp_dir" ]; then
+            rm -f "$tmp_dir/openapi.gen.go" "$tmp_dir/oapi-codegen.yaml"
+            rmdir "$tmp_dir"
+          fi
+          exit "$exit_code"
+        }
+        trap cleanup EXIT
+        if ! tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/teku-dun-api-generate-check.XXXXXX")"; then
+          echo 'failed to create a temporary directory' >&2
+          exit 1
+        fi
+        if ! sed "s#output: internal/openapi/openapi.gen.go#output: $tmp_dir/openapi.gen.go#" \
+          oapi-codegen.yaml > "$tmp_dir/oapi-codegen.yaml"; then
+          echo 'failed to prepare the temporary oapi-codegen config' >&2
+          exit 1
+        fi
+        if ! go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
+          --config "$tmp_dir/oapi-codegen.yaml" \
+          "$ROOT_DIR/$API_DIR/../$API_OPENAPI_SPEC"; then
+          echo 'Go code generation failed' >&2
+          exit 1
+        fi
+        if ! diff -u internal/openapi/openapi.gen.go "$tmp_dir/openapi.gen.go"; then
+          echo 'generated Go code is out of date' >&2
+          exit 1
+        fi
+
+  test:
+    desc: Go APIのユニットテストを実行する
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      API_DIR: '{{.API_DIR}}'
+      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    cmds:
+      - cd "$ROOT_DIR/$API_DIR" && go test ./...
+
+  vet:
+    desc: Go APIをgo vetで検査する
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      API_DIR: '{{.API_DIR}}'
+      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    cmds:
+      - cd "$ROOT_DIR/$API_DIR" && go vet ./...
+
+  run:
+    desc: Go APIをローカル起動する
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      API_DIR: '{{.API_DIR}}'
+      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    cmds:
+      - cd "$ROOT_DIR/$API_DIR" && go run ./cmd/api
+
+  verify:
+    desc: Go APIの生成物・テスト・静的検査をまとめて実行する
+    cmds:
+      - task: generate-check
+      - task: test
+      - task: vet
