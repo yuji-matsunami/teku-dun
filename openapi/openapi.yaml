@@ -1,0 +1,101 @@
+openapi: 3.0.3
+info:
+  title: Teku Dun API
+  version: 0.1.0
+  description: |
+    Teku Dun の HTTP API 契約。サーバ実装と Flutter クライアントの
+    コード生成元として利用する。
+servers:
+  - url: /
+    description: Current host
+tags:
+  - name: health
+    description: Service health and readiness checks.
+paths:
+  /healthz:
+    get:
+      tags:
+        - health
+      operationId: getHealthz
+      summary: Check whether the service is alive
+      description: Returns a successful response when the API process is alive.
+      security: []
+      responses:
+        '200':
+          description: The service is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        default:
+          description: The service could not answer the health check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /readyz:
+    get:
+      tags:
+        - health
+      operationId: getReadyz
+      summary: Check whether the service is ready
+      description: Returns a successful response when the service can accept requests.
+      security: []
+      responses:
+        '200':
+          description: The service is ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          description: The service is not ready to accept requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: The service could not answer the readiness check.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      description: Successful liveness check response.
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+          example: ok
+    ReadyResponse:
+      type: object
+      description: Successful readiness check response.
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+          example: ready
+    ErrorResponse:
+      type: object
+      description: Standard error response returned by the API.
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code.
+          example: service_unavailable
+        message:
+          type: string
+          description: Human-readable error message.
+          example: Service is not ready.

@@ -1,0 +1,7 @@
+extends:
+  - recommended
+rules:
+  # The repository does not yet publish a license for this API contract.
+  info-license: off
+  # Health and readiness checks have no request input, so a 4xx response is not meaningful.
+  operation-4xx-response: off

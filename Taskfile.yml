@@ -1,0 +1,11 @@
+version: '3'
+
+includes:
+  openapi:
+    taskfile: taskfiles/OpenAPI.yml
+
+tasks:
+  default:
+    desc: 利用可能なタスクを表示する
+    cmds:
+      - task --list
