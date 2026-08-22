@@ -80,6 +80,10 @@ class TrackingEventKind {
   /// プロバイダ側で発生したエラー。
   static const String providerError = 'providerError';
 
+  /// プラグイン内部DBの記録件数と、自前ログとの突き合わせ結果。
+  /// 「ライブラリが止まった」のか「アプリだけが落ちた」のかの切り分けに使う。
+  static const String pluginRecordStats = 'pluginRecordStats';
+
   /// アプリのライフサイクル変化 (フォアグラウンド/バックグラウンド/画面ロック等)。
   static const String appLifecycle = 'appLifecycle';
 }

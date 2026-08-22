@@ -320,4 +320,123 @@ void main() {
       expect(metrics.movingSampleCount, 2);
     });
   });
+
+  // 頭尾の欠損検出。本スパイクが検出すべき失敗そのものを扱う。
+  group('頭尾の欠損検出', () {
+    // 15分のセッション中、最初の3分しかサンプルが無い =
+    // 途中で計測が死んで戻らなかったケース。
+    List<LocationSample> firstThreeMinutesOnly() {
+      return List<LocationSample>.generate(19, (i) {
+        return _sample(
+          seq: i + 1,
+          recordedAt: base.add(Duration(seconds: 10 * i)),
+          latitude: 35.0 + i * 0.0001,
+          longitude: 139.0,
+          accuracy: 8,
+        );
+      });
+    }
+
+    test('途中で計測が止まると末尾欠損として検出される', () {
+      final metrics = SessionMetrics.compute(
+        firstThreeMinutesOnly(),
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 15)),
+      );
+
+      final tail = metrics.gaps.where((g) => g.position == GapPosition.tail);
+      expect(tail, hasLength(1));
+      // 3分ちょうどまでサンプルがあるので、残り12分が欠損。
+      expect(tail.first.duration, const Duration(minutes: 12));
+      expect(metrics.gapRatio, greaterThan(0.7));
+    });
+
+    test('末尾欠損は取得間隔の統計を汚染しない', () {
+      final metrics = SessionMetrics.compute(
+        firstThreeMinutesOnly(),
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 15)),
+      );
+
+      // サンプル間はすべて10秒間隔。末尾の12分が混ざってはならない。
+      expect(metrics.medianInterval, const Duration(seconds: 10));
+      expect(metrics.p95Interval, const Duration(seconds: 10));
+      expect(metrics.maxInterval, const Duration(seconds: 10));
+    });
+
+    test('開始直後に取得できない区間は先頭欠損として検出される', () {
+      final samples = List<LocationSample>.generate(6, (i) {
+        return _sample(
+          seq: i + 1,
+          recordedAt: base.add(Duration(minutes: 4, seconds: 10 * i)),
+          latitude: 35.0 + i * 0.0001,
+          longitude: 139.0,
+          accuracy: 8,
+        );
+      });
+
+      final metrics = SessionMetrics.compute(
+        samples,
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 5)),
+      );
+
+      final head = metrics.gaps.where((g) => g.position == GapPosition.head);
+      expect(head, hasLength(1));
+      expect(head.first.duration, const Duration(minutes: 4));
+      expect(head.first.positionLabel, '開始直後');
+    });
+
+    test('サンプルが1件も無い場合はセッション全体が欠損になる', () {
+      final metrics = SessionMetrics.compute(
+        const [],
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 15)),
+      );
+
+      expect(metrics.gaps, hasLength(1));
+      expect(metrics.gaps.first.position, GapPosition.whole);
+      expect(metrics.gaps.first.duration, const Duration(minutes: 15));
+      expect(metrics.gapRatio, closeTo(1.0, 0.001));
+      expect(metrics.toReportString(), contains('セッション全体'));
+    });
+
+    test('末尾欠損があるとレポートに警告が出る', () {
+      final metrics = SessionMetrics.compute(
+        firstThreeMinutesOnly(),
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 15)),
+      );
+
+      expect(metrics.toReportString(), contains('計測が途中で止まった可能性'));
+    });
+
+    test('サンプルがセッション区間外にあっても負の欠損を出さない', () {
+      final samples = [
+        _sample(
+          seq: 1,
+          recordedAt: base.subtract(const Duration(minutes: 1)),
+          latitude: 35.0,
+          longitude: 139.0,
+        ),
+        _sample(
+          seq: 2,
+          recordedAt: base.add(const Duration(minutes: 16)),
+          latitude: 35.001,
+          longitude: 139.0,
+        ),
+      ];
+
+      final metrics = SessionMetrics.compute(
+        samples,
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 15)),
+      );
+
+      for (final gap in metrics.gaps) {
+        expect(gap.duration.isNegative, isFalse);
+      }
+      expect(metrics.totalGapDuration.isNegative, isFalse);
+    });
+  });
 }

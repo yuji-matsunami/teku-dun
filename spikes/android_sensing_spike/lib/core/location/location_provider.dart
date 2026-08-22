@@ -3,6 +3,86 @@ import 'package:flutter/foundation.dart' show immutable;
 import '../models/location_sample.dart';
 import '../models/tracking_event.dart';
 
+/// プラグインが自前のDBへ永続化した位置記録の件数。
+///
+/// 本スパイクの結論を左右する切り分けのために使う。
+///
+/// 2つのライブラリはいずれも `stopOnTerminate: false` で動作し、
+/// Android が Flutter の Dart isolate を停止させても、ネイティブ側の
+/// フォアグラウンドサービスは記録を続ける。一方このアプリの JSONL ログは
+/// Dart 側でしか書けないため、isolate が落ちるとログだけが途切れる。
+///
+/// この状態は、ログの見た目上「ライブラリが計測を止めた」場合と
+/// 区別がつかない。両者を取り違えると、実際には正常に動いていた
+/// ライブラリを不採用にしかねない。
+///
+/// そこでセッション終了時にプラグイン内部の記録件数を読み出し、
+/// 自前ログの件数と突き合わせる。
+///
+/// - 両者がほぼ一致 → Dart 側の取りこぼしは無い
+/// - プラグイン側が大幅に多い → **アプリだけが落ち、ライブラリは動いていた**
+/// - 両者とも少ない → ライブラリまたは OS が計測を止めた
+///
+/// なお `flutter_background_geolocation` は、モーション変化時に発生する
+/// 使い捨てサンプル (`Location.sample == true`) を自前DBへ保存しない。
+/// そのため両者の件数は元々完全には一致しない。差分の解釈には注意する。
+@immutable
+class PluginRecordStats {
+  const PluginRecordStats({
+    required this.supported,
+    this.totalCount,
+    this.countInWindow,
+    this.firstAt,
+    this.lastAt,
+    this.error,
+  });
+
+  /// プラグインが記録件数の取得APIを持つか。
+  /// 持たない場合は false とし、他のフィールドは null にする。
+  final bool supported;
+
+  /// プラグインDBに残っている全記録の件数。
+  final int? totalCount;
+
+  /// 問い合わせた期間内に限った記録件数。
+  final int? countInWindow;
+
+  /// 期間内で最初に記録された時刻 (UTC)。
+  final DateTime? firstAt;
+
+  /// 期間内で最後に記録された時刻 (UTC)。
+  /// セッション終了時刻より大幅に古ければ、その時点で計測が止まっている。
+  final DateTime? lastAt;
+
+  /// 読み出しに失敗した場合の理由。
+  final String? error;
+
+  /// ログ (TrackingEvent.data) へ埋め込むための Map に変換する。
+  Map<String, dynamic> toJson() {
+    final map = <String, dynamic>{'supported': supported};
+    if (totalCount != null) map['totalCount'] = totalCount;
+    if (countInWindow != null) map['countInWindow'] = countInWindow;
+    if (firstAt != null) map['firstAt'] = firstAt!.toIso8601String();
+    if (lastAt != null) map['lastAt'] = lastAt!.toIso8601String();
+    if (error != null) map['error'] = error;
+    return map;
+  }
+
+  /// [toJson] で得られた Map から復元する。
+  factory PluginRecordStats.fromJson(Map<String, dynamic> json) {
+    DateTime? parse(Object? v) =>
+        v is String ? DateTime.parse(v).toUtc() : null;
+    return PluginRecordStats(
+      supported: json['supported'] as bool? ?? false,
+      totalCount: json['totalCount'] as int?,
+      countInWindow: json['countInWindow'] as int?,
+      firstAt: parse(json['firstAt']),
+      lastAt: parse(json['lastAt']),
+      error: json['error'] as String?,
+    );
+  }
+}
+
 /// 権限リクエストの結果を表す不変クラス。
 ///
 /// バックグラウンド計測が動かない原因の多くは権限不足であるため、
@@ -100,4 +180,22 @@ abstract class LocationProvider {
 
   /// 現在計測中かどうか。
   bool get isTracking;
+
+  /// プラグインが自前のDBへ永続化した記録の件数を読み出す。
+  ///
+  /// [from] / [to] は UTC で渡す。プラグインDBはセッションをまたいで
+  /// 蓄積されるため、必ず期間で絞り込むこと。
+  ///
+  /// __破壊的な操作をしてはならない。__ プラグイン側のレコードを削除して
+  /// 件数を数え直す実装にすると、取り違えた場合に実測データそのものを
+  /// 失う。読み取りのみで完結させること。
+  ///
+  /// APIを持たないプラグインでは `PluginRecordStats(supported: false)` を
+  /// 返す。失敗しても例外を投げず、[PluginRecordStats.error] に理由を入れる。
+  ///
+  /// 用途は [PluginRecordStats] のドキュメントを参照。
+  Future<PluginRecordStats> readPluginRecords({
+    required DateTime from,
+    required DateTime to,
+  });
 }

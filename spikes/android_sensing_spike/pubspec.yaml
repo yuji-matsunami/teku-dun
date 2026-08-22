@@ -1,5 +1,5 @@
 name: android_sensing_spike
-description: "A new Flutter project."
+description: "M0-I1 検証用スパイク: Androidバックグラウンド位置・Health Connect歩数の収集を比較検証する。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -31,9 +31,25 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+
+  # 比較対象のバックグラウンド位置ライブラリ。
+  # flutter_background_geolocation は DEBUG ビルドならライセンス不要で全機能が動く。
+  flutter_background_geolocation: ^5.5.0
+  tracelet: ^3.8.7
+
+  # 歩数。Android は Health Connect 経由。
+  health: ^13.3.2
+
+  # 権限・電池・端末情報・ログの保存と共有。
+  # 13.x 系 (permission_handler_android 14) は compileSdk 37 を要求するが、
+  # Android SDK 側には android-37.0 しか存在せず Gradle が解決できない。
+  # compileSdk 36 で収まる 12.x 系を使う。
+  permission_handler: ^12.0.3
+  battery_plus: ^7.1.1
+  device_info_plus: ^13.2.0
+  path_provider: ^2.1.6
+  share_plus: ^13.3.0
 
 dev_dependencies:
   flutter_test:

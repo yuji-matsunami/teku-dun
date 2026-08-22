@@ -4,19 +4,63 @@ import 'package:flutter/foundation.dart' show immutable;
 
 import '../models/location_sample.dart';
 
-/// 連続した 2 サンプル間で検出された「欠損 (取得間隔が異常に空いた区間)」。
+/// 欠損区間がセッションのどこで起きたか。
+///
+/// この区別を失うと、意味の全く違う 2 つの現象が同じ数字に見えてしまう。
+/// 「最初の 4 分間 fix が来ない」(GPS のコールドスタート、想定内) と
+/// 「最後の 11 分間 fix が来ない」(計測が死んだ) は、
+/// 本スパイクにとって正反対の結論を導く。
+enum GapPosition {
+  /// セッション開始から最初のサンプルまで。
+  /// GPS の初期補足や権限ダイアログの待ち時間で、ある程度は必ず生じる。
+  head,
+
+  /// サンプルとサンプルの間。
+  interior,
+
+  /// 最後のサンプルからセッション終了まで。
+  /// ここが長い場合、計測が途中で死んだことを強く示唆する。
+  tail,
+
+  /// サンプルが 1 件も無く、セッション全体が欠損しているケース。
+  whole,
+}
+
+/// 検出された「欠損 (位置情報が取れていない区間)」。
 @immutable
 class Gap {
-  const Gap({required this.from, required this.to, required this.duration});
+  const Gap({
+    required this.from,
+    required this.to,
+    required this.duration,
+    required this.position,
+  });
 
-  /// 欠損区間の開始 (直前のサンプルの recordedAt)。
+  /// 欠損区間の開始。
   final DateTime from;
 
-  /// 欠損区間の終了 (直後のサンプルの recordedAt)。
+  /// 欠損区間の終了。
   final DateTime to;
 
   /// 欠損区間の長さ。
   final Duration duration;
+
+  /// 欠損がセッションのどこで起きたか。
+  final GapPosition position;
+
+  /// 表示用のラベル。
+  String get positionLabel {
+    switch (position) {
+      case GapPosition.head:
+        return '開始直後';
+      case GapPosition.interior:
+        return '計測中';
+      case GapPosition.tail:
+        return '終了直前';
+      case GapPosition.whole:
+        return 'セッション全体';
+    }
+  }
 }
 
 /// 1 セッション分の [LocationSample] 群から算出した比較用メトリクス。
@@ -129,6 +173,28 @@ class SessionMetrics {
     var rejectedSegments = 0;
     var totalDistanceMeters = 0.0;
 
+    // セッション開始から最初のサンプルまでの欠損。
+    //
+    // ここを見ないと「計測が一度も始まらなかった」ケースを検出できない。
+    // またこの区間は正常時でも必ず 0 より大きい。呼び出し側はセッション開始
+    // 時刻を記録してから Health Connect の読み出しを待ち、そのあとで
+    // provider.start() を呼ぶうえ、GPS のコールドスタートも加わるためである。
+    if (sorted.isNotEmpty) {
+      final headGap = _clampNonNegative(
+        sorted.first.recordedAt.difference(sessionStart),
+      );
+      if (headGap > gapThreshold) {
+        gaps.add(
+          Gap(
+            from: sessionStart,
+            to: sorted.first.recordedAt,
+            duration: headGap,
+            position: GapPosition.head,
+          ),
+        );
+      }
+    }
+
     for (var i = 1; i < sorted.length; i++) {
       final prev = sorted[i - 1];
       final cur = sorted[i];
@@ -138,7 +204,14 @@ class SessionMetrics {
       final diff = rawDiff.isNegative ? Duration.zero : rawDiff;
       intervals.add(diff);
       if (diff > gapThreshold) {
-        gaps.add(Gap(from: prev.recordedAt, to: cur.recordedAt, duration: diff));
+        gaps.add(
+          Gap(
+            from: prev.recordedAt,
+            to: cur.recordedAt,
+            duration: diff,
+            position: GapPosition.interior,
+          ),
+        );
       }
 
       final prevAcc = prev.accuracy;
@@ -156,6 +229,38 @@ class SessionMetrics {
           cur.longitude,
         );
       }
+    }
+
+    // 最後のサンプルからセッション終了までの欠損。
+    //
+    // __本スパイクが検出すべき失敗そのもの。__ 15 分の歩行のうち 3 分で
+    // 計測が死んで戻らなかった場合、サンプル間だけを見ていると
+    // 「欠損 0 回・欠損率 0%・取得間隔も健全」という、正常な計測と
+    // 見分けのつかない結果になる。
+    if (sorted.isNotEmpty) {
+      final tailGap = _clampNonNegative(
+        sessionEnd.difference(sorted.last.recordedAt),
+      );
+      if (tailGap > gapThreshold) {
+        gaps.add(
+          Gap(
+            from: sorted.last.recordedAt,
+            to: sessionEnd,
+            duration: tailGap,
+            position: GapPosition.tail,
+          ),
+        );
+      }
+    } else if (wallClockDuration > gapThreshold) {
+      // サンプルが 1 件も無い = 完全な失敗。最も目立たせるべきケース。
+      gaps.add(
+        Gap(
+          from: sessionStart,
+          to: sessionEnd,
+          duration: wallClockDuration,
+          position: GapPosition.whole,
+        ),
+      );
     }
 
     final totalGapDuration = gaps.fold<Duration>(
@@ -249,6 +354,12 @@ class SessionMetrics {
     return values[_nearestRankIndex(values.length, percentile)];
   }
 
+  /// 負の [Duration] を 0 に丸める。
+  /// サンプルの時刻がセッション区間の外にある異常入力でも、
+  /// 負の欠損時間を出さないようにするため。
+  static Duration _clampNonNegative(Duration d) =>
+      d.isNegative ? Duration.zero : d;
+
   static int _nearestRankIndex(int length, double percentile) {
     final rank = (percentile / 100 * length).ceil().clamp(1, length);
     return rank - 1;
@@ -271,10 +382,38 @@ class SessionMetrics {
     buf.writeln('計測時間: ${_formatDuration(wallClockDuration)}');
     buf.writeln('取得間隔中央値: ${_formatDuration(medianInterval)}');
     buf.writeln('取得間隔p95: ${_formatDuration(p95Interval)}');
-    buf.writeln('最大欠損間隔: ${_formatDuration(maxInterval)}');
+    // 「最大取得間隔」はサンプルとサンプルの最大の空き。
+    // 頭尾の欠損は含まないので、下の「最大欠損」と混同しないこと。
+    buf.writeln('最大取得間隔(サンプル間): ${_formatDuration(maxInterval)}');
     buf.writeln('欠損回数: ${gaps.length} 回 (閾値超過区間)');
     buf.writeln('総欠損時間: ${_formatDuration(totalGapDuration)}');
     buf.writeln('欠損率: ${(gapRatio * 100).toStringAsFixed(1)}%');
+    final maxGap = gaps.isEmpty
+        ? Duration.zero
+        : gaps.map((g) => g.duration).reduce((a, b) => a > b ? a : b);
+    buf.writeln('最大欠損: ${_formatDuration(maxGap)}');
+    if (gaps.isEmpty) {
+      buf.writeln('欠損の内訳: なし');
+    } else {
+      final breakdown = <String, Duration>{};
+      for (final g in gaps) {
+        breakdown[g.positionLabel] =
+            (breakdown[g.positionLabel] ?? Duration.zero) + g.duration;
+      }
+      buf.writeln(
+        '欠損の内訳: '
+        '${breakdown.entries.map((e) => '${e.key} ${_formatDuration(e.value)}').join(', ')}',
+      );
+      final tail = gaps.where(
+        (g) => g.position == GapPosition.tail || g.position == GapPosition.whole,
+      );
+      if (tail.isNotEmpty) {
+        buf.writeln(
+          '警告: セッション終了まで位置情報が来ていない区間がある。'
+          '計測が途中で止まった可能性が高い。',
+        );
+      }
+    }
     buf.writeln(
       '移動距離: ${(totalDistanceMeters / 1000).toStringAsFixed(2)} km '
       '(精度不良で除外した区間: $rejectedSegments)',
