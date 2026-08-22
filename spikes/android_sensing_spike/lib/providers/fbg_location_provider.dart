@@ -115,6 +115,10 @@ class FbgLocationProvider implements LocationProvider {
         app: bg.AppConfig(
           stopOnTerminate: CompareConfig.stopOnTerminate,
           startOnBoot: CompareConfig.startOnBoot,
+          // アプリが OS に停止させられたあとも Dart 側で記録を続けるため。
+          // main() での registerHeadlessTask とセットで初めて機能する。
+          // tracelet 側にはこの設定項目が無く、登録のみで有効になる。
+          enableHeadless: true,
           notification: bg.Notification(
             title: '位置情報計測中 (fbg)',
             text: 'flutter_background_geolocation で計測しています。',

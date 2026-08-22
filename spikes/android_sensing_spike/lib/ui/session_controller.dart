@@ -392,6 +392,11 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
         ).toJson(),
       );
 
+      // ヘッドレス isolate はアプリのメモリを共有しないため、
+      // 対象セッションをディスク経由でしか知りえない。
+      // provider.start() より前に書いておく。
+      await _store?.writeActiveSessionId(meta.id);
+
       isRunning = true;
       _startTicker();
       await provider.start();
@@ -463,6 +468,15 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     final endedAt = DateTime.now().toUtc();
 
     try {
+      // 0. 計測中フラグをディスクから消す。
+      //    消し忘れると、計測していない時間帯にヘッドレスタスクが拾った
+      //    イベントが、このセッションのログへ混入する。
+      try {
+        await _store?.writeActiveSessionId(null);
+      } catch (e) {
+        _pushMessage('計測中フラグのクリアに失敗しました: $e');
+      }
+
       // 1. まず計測を止める。ここで止め損なうと次の計測の電池消費が汚れる。
       if (provider != null) {
         try {

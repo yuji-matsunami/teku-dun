@@ -54,6 +54,68 @@ iOS、24時間計測、本番向け最適化、Drift への保存、API 送信�
 
 ---
 
+
+## 予備検証（bg_test）で判明したこと
+
+本番の比較計測に入る前に、`flutter_background_geolocation` 単体が実機で動くかを
+別アプリ（`bg_test`）で確認した。以下はそのときに得られた事実である。
+
+### 実施条件
+
+| 項目 | 値 |
+| --- | --- |
+| 端末 | Samsung SC-51D |
+| Android | 16 |
+| 実施日 | 2026-08-22 |
+| ライブラリ | flutter_background_geolocation 5.5.0（DEBUGビルド） |
+| 設定 | `distanceFilter: 0`、`stopOnTerminate: false`、`startOnBoot: true` |
+
+### 判明したこと
+
+| 項目 | 結果 |
+| --- | --- |
+| 位置情報の取得 | 成立。精度 4〜8m |
+| 取得間隔 | 約1秒 |
+| 位置情報の権限 | **「常に許可」が必須。** 「アプリの使用中のみ」ではバックグラウンドで取得できない |
+| モーション判定 | 動作（`DetectedActivity [type=STILL, confidence=100]`、isMoving の遷移を確認） |
+| アプリ終了後のネイティブ側 | **記録を継続**（`MainActivity was destroyed` / `stopOnTerminate: false` / `enabled: true`） |
+| DEBUGビルドのライセンス | 不要。警告なく全機能が動作 |
+
+### 取得間隔が約1秒になった理由
+
+`distanceFilter: 0` にしたためである。fbg は `distanceFilter` が
+`locationUpdateInterval` を上書きする仕様で、0 にして初めて時間駆動になる。
+
+**本検証アプリは両ライブラリを揃えるため `distanceFilter: 10m` にしてあるので、
+fbg は移動距離駆動になり、この1秒間隔にはならない。** 比較表を読むときに
+この違いを取り違えないこと。
+
+### `enableHeadless: true` だけでは動かない
+
+`bg_test` では `enableHeadless: true` を設定していたが、
+`registerHeadlessTask()` を呼んでいなかった。その結果、ログには
+
+```
+☯️  HeadlessMode? true
+💀 [HeadlessTask terminate]
+🔴  Cleared callbacks
+```
+
+と出るものの、**アプリ終了後は Dart 側で一切何も記録されなかった。**
+設定とコールバック登録の両方が必要である。本検証アプリでは
+`main()` で両ライブラリのヘッドレスタスクを登録している。
+
+### ログの取り方に関する注意
+
+`adb logcat | grep flutter` は **Dart 側の出力しか拾わない。**
+アプリが終了するとネイティブが記録を続けていても何も出なくなるため、
+これだけを見て「計測が止まった」と判断してはいけない。
+
+- ネイティブの動作を見る: `adb logcat | grep TSLocationManager`
+- 確実なのは、本検証アプリのセッション詳細画面で
+  「プラグイン内部記録との突き合わせ」と「ヘッドレス記録件数」を確認すること
+
+---
 ## 手順
 
 ### 前提

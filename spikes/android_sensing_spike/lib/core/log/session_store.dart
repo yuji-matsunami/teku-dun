@@ -110,6 +110,45 @@ class SessionStore {
     }
   }
 
+  File get _activeSessionFile =>
+      File(_joinPath(_root.path, 'active_session.json'));
+
+  /// 「いま計測中のセッション」の ID をディスクへ記録する。
+  ///
+  /// ヘッドレス isolate は [SessionController] の状態を一切共有しない
+  /// (別 isolate であり、アプリのメモリはすでに失われている)。
+  /// そのためディスク経由でしか現在のセッションを知る手段が無い。
+  ///
+  /// 計測終了時は `null` を渡してクリアすること。クリアし忘れると、
+  /// 計測していない時間帯のイベントが前回のセッションへ混入する。
+  Future<void> writeActiveSessionId(String? sessionId) async {
+    final file = _activeSessionFile;
+    if (sessionId == null) {
+      if (await file.exists()) {
+        await file.delete();
+      }
+      return;
+    }
+    await _root.create(recursive: true);
+    await file.writeAsString(jsonEncode(<String, dynamic>{'id': sessionId}));
+  }
+
+  /// [writeActiveSessionId] で記録した ID を読み出す。
+  /// 計測中でなければ `null`。
+  Future<String?> readActiveSessionId() async {
+    final file = _activeSessionFile;
+    if (!await file.exists()) return null;
+    try {
+      final json = jsonDecode(await file.readAsString());
+      if (json is Map<String, dynamic>) {
+        return json['id'] as String?;
+      }
+    } on FormatException {
+      // 壊れていれば計測中でないものとして扱う。
+    }
+    return null;
+  }
+
   /// エクスポート用に events.jsonl の [File] を返す。
   /// (このスパイクでは events.jsonl 自体が既に JSONL 形式のため、
   /// コピーは行わずファイル参照をそのまま返す。)

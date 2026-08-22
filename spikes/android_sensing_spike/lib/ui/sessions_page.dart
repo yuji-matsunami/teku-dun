@@ -171,6 +171,7 @@ class _SessionDetail {
     required this.stepsEvents,
     required this.pluginRecordEvents,
     required this.locationSampleCount,
+    required this.headlessSampleCount,
   });
 
   final SessionMetrics? metrics;
@@ -183,6 +184,12 @@ class _SessionDetail {
 
   /// ログに残っていた位置サンプル件数。
   final int locationSampleCount;
+
+  /// そのうち、アプリが停止したあとヘッドレスタスクが記録した件数。
+  ///
+  /// 0 より大きい = 計測中にアプリ (Dart isolate) が OS に落とされたが、
+  /// ライブラリ側は記録を続けていた、ということ。
+  final int headlessSampleCount;
 }
 
 class _SessionDetailPageState extends State<_SessionDetailPage> {
@@ -201,9 +208,11 @@ class _SessionDetailPageState extends State<_SessionDetailPage> {
     if (store == null) return null;
     final rawEvents = await store.readEvents(widget.meta.id);
     final samples = <LocationSample>[];
+    var headlessSampleCount = 0;
     for (final json in rawEvents) {
       if (json['type'] == 'location') {
         samples.add(LocationSample.fromJson(json));
+        if (json['headless'] == true) headlessSampleCount++;
       }
     }
     // 未終了セッション (endedAt が無い) で DateTime.now() を代入してはならない。
@@ -246,6 +255,7 @@ class _SessionDetailPageState extends State<_SessionDetailPage> {
       stepsEvents: stepsEvents,
       pluginRecordEvents: pluginRecordEvents,
       locationSampleCount: samples.length,
+      headlessSampleCount: headlessSampleCount,
     );
   }
 
@@ -344,6 +354,27 @@ class _SessionDetailPageState extends State<_SessionDetailPage> {
                   metrics?.toReportString() ?? 'メトリクスを計算できませんでした。',
                   style: const TextStyle(fontFamily: 'monospace'),
                 ),
+                if ((detail?.headlessSampleCount ?? 0) > 0) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    color: Theme.of(context).colorScheme.tertiaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        '計測中にアプリが停止しましたが、ライブラリは記録を続けていました。\n'
+                        'ヘッドレスタスクが記録したサンプル: '
+                        '${detail!.headlessSampleCount} 件 '
+                        '(全 ${detail.locationSampleCount} 件中)\n'
+                        'この区間の欠損はライブラリの問題ではありません。',
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onTertiaryContainer,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 const Text(
                   'この計測区間の歩数 (Health Connect)',
