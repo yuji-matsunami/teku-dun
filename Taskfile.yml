@@ -9,6 +9,8 @@ includes:
     taskfile: taskfiles/API.yml
   dart:
     taskfile: taskfiles/Dart.yml
+  flutter:
+    taskfile: taskfiles/Flutter.yml
 
 tasks:
   default:
