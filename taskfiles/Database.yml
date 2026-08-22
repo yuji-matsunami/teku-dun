@@ -1,0 +1,66 @@
+version: '3'
+
+vars:
+  COMPOSE: '{{.COMPOSE | default "docker compose"}}'
+  DB_SERVICE: '{{.DB_SERVICE | default "db"}}'
+  MIGRATE_SERVICE: '{{.MIGRATE_SERVICE | default "migrate"}}'
+
+tasks:
+  up:
+    desc: DBコンテナを起動し、healthyになるまで待機する
+    env:
+      COMPOSE: '{{.COMPOSE}}'
+      DB_SERVICE: '{{.DB_SERVICE}}'
+      MIGRATE_SERVICE: '{{.MIGRATE_SERVICE}}'
+    cmds:
+      - ./scripts/compose.sh up
+
+  migrate:
+    desc: 未適用のDBマイグレーションを適用する
+    env:
+      COMPOSE: '{{.COMPOSE}}'
+      DB_SERVICE: '{{.DB_SERVICE}}'
+      MIGRATE_SERVICE: '{{.MIGRATE_SERVICE}}'
+    cmds:
+      - ./scripts/compose.sh migrate
+
+  migrate-down:
+    desc: 直前のDBマイグレーションを1つ戻す
+    env:
+      COMPOSE: '{{.COMPOSE}}'
+      DB_SERVICE: '{{.DB_SERVICE}}'
+      MIGRATE_SERVICE: '{{.MIGRATE_SERVICE}}'
+    cmds:
+      - ./scripts/compose.sh migrate-down
+
+  verify:
+    desc: PostGIS_Version()を表示してDB拡張を確認する
+    env:
+      COMPOSE: '{{.COMPOSE}}'
+      DB_SERVICE: '{{.DB_SERVICE}}'
+      MIGRATE_SERVICE: '{{.MIGRATE_SERVICE}}'
+    cmds:
+      - ./scripts/compose.sh verify
+
+  down:
+    desc: DBコンテナを停止する（ボリュームは保持）
+    env:
+      COMPOSE: '{{.COMPOSE}}'
+      DB_SERVICE: '{{.DB_SERVICE}}'
+      MIGRATE_SERVICE: '{{.MIGRATE_SERVICE}}'
+    cmds:
+      - ./scripts/compose.sh down
+
+  reset:
+    desc: DBを停止し、データボリュームを削除する（CONFIRM_DB_RESET=1が必要）
+    requires:
+      vars:
+        - name: CONFIRM_DB_RESET
+          enum: ['1']
+    env:
+      COMPOSE: '{{.COMPOSE}}'
+      DB_SERVICE: '{{.DB_SERVICE}}'
+      MIGRATE_SERVICE: '{{.MIGRATE_SERVICE}}'
+    cmds:
+      - echo 'db:reset removes the database volume(s).'
+      - ./scripts/compose.sh reset

@@ -3,6 +3,8 @@ version: '3'
 includes:
   openapi:
     taskfile: taskfiles/OpenAPI.yml
+  db:
+    taskfile: taskfiles/Database.yml
 
 tasks:
   default:
