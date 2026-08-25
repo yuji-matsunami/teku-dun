@@ -1,5 +1,22 @@
 # OpenAPI仕様書
 
+## OpenAPI 3.0.3を採用する理由
+
+仕様書ではOpenAPI **3.0.3**を使用します。現時点では、次の理由から
+OpenAPI 3.1ではなく3.0.3を選択しています。
+
+- Goサーバーの`oapi-codegen` v2.4.1と、DartクライアントのOpenAPI Generator
+  v7.10.0を組み合わせたコード生成を、このバージョンで検証している。
+- validator、Redoclyによるlint・プレビューを含む現在のツールチェーンで、
+  サーバーとクライアントの共通契約として安定して扱える。
+- 現在のAPIは、OpenAPI 3.1で強化されたJSON Schemaとの整合性など、
+  3.1固有の機能を必要としていない。
+
+OpenAPI 3.1への移行は、3.1固有の表現が必要になった場合、または利用する
+validator、Redocly、`oapi-codegen`、OpenAPI Generatorが3.1を一貫して扱えることを
+確認できた段階で検討します。移行時には、GoとDartの生成差分、既存APIとの互換性、
+validate・lint・プレビューの結果を確認します。
+
 ## ブラウザでプレビューする
 
 リポジトリのルートから次のコマンドを実行します。
