@@ -5,9 +5,6 @@ vars:
   # script validates them before using them and never embeds user input into a
   # generated shell command.
   TASK_EXE: '{{.TASK_EXE | default "task"}}'
-  COMPOSE: '{{.COMPOSE | default "docker compose"}}'
-  DB_SERVICE: '{{.DB_SERVICE | default "db"}}'
-  MIGRATE_SERVICE: '{{.MIGRATE_SERVICE | default "migrate"}}'
   API_DIR: '{{.API_DIR | default "api"}}'
   SMOKE_API_ADDR: '{{.SMOKE_API_ADDR | default "127.0.0.1"}}'
   SMOKE_API_PORT: '{{.SMOKE_API_PORT | default "18080"}}'
@@ -28,9 +25,6 @@ tasks:
     dir: '{{.ROOT_DIR}}'
     env:
       TASK_EXE: '{{.TASK_EXE}}'
-      COMPOSE: '{{.COMPOSE}}'
-      DB_SERVICE: '{{.DB_SERVICE}}'
-      MIGRATE_SERVICE: '{{.MIGRATE_SERVICE}}'
       API_DIR: '{{.API_DIR}}'
       SMOKE_API_ADDR: '{{.SMOKE_API_ADDR}}'
       SMOKE_API_PORT: '{{.SMOKE_API_PORT}}'

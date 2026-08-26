@@ -5,9 +5,6 @@ set -u
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 task_exe="${TASK_EXE:-task}"
-compose_command="${COMPOSE:-docker compose}"
-db_service="${DB_SERVICE:-db}"
-migrate_service="${MIGRATE_SERVICE:-migrate}"
 api_dir="${API_DIR:-api}"
 api_addr="${SMOKE_API_ADDR:-127.0.0.1}"
 api_port="${SMOKE_API_PORT:-18080}"
@@ -23,23 +20,6 @@ case "$task_exe" in
   *$'\n'*|*$'\r'*) fail_input 'TASK_EXE must not contain a newline.' ;;
 esac
 
-# COMPOSE is kept as a command string for compatibility with the component
-# Taskfiles (the default is "docker compose"). Restrict it to shell-free
-# command-line characters, then execute it as an argv array below.
-if [[ -z "$compose_command" || "$compose_command" =~ [^[:alnum:]_./:=+,-\ ] ]]; then
-  fail_input 'COMPOSE must contain only command, option, path, and space characters.'
-fi
-read -r -a compose_argv <<< "$compose_command"
-if ((${#compose_argv[@]} == 0)); then
-  fail_input 'COMPOSE must not be empty.'
-fi
-
-case "$db_service" in
-  ''|*[![:alnum:]_.-]*) fail_input 'DB_SERVICE must be a simple Compose service name.' ;;
-esac
-case "$migrate_service" in
-  ''|*[![:alnum:]_.-]*) fail_input 'MIGRATE_SERVICE must be a simple Compose service name.' ;;
-esac
 case "$api_dir" in
   ''|/*|*'..'*|*[![:alnum:]_./-]*) fail_input 'API_DIR must be a relative path without parent traversal.' ;;
 esac
@@ -89,10 +69,7 @@ db_state='unknown'
 db_start_attempted=0
 
 run_task() {
-  "$task_exe" "$@" \
-    "COMPOSE=$compose_command" \
-    "DB_SERVICE=$db_service" \
-    "MIGRATE_SERVICE=$migrate_service"
+  "$task_exe" "$@"
 }
 
 cleanup() {
@@ -112,10 +89,10 @@ cleanup() {
   else
     case "$db_state" in
       running)
-        echo 'smoke: leaving the pre-existing running DB unchanged.' >&2
+        echo 'smoke: leaving the pre-existing DB running after migrations.' >&2
         ;;
       stopped_existing)
-        if ! "${compose_argv[@]}" stop "$db_service" >"$log_dir/db-stop.log" 2>&1; then
+        if ! docker compose stop db >"$log_dir/db-stop.log" 2>&1; then
           echo 'smoke: cleanup failed to restore the pre-existing stopped DB.' >&2
           cleanup_failed=1
         fi
@@ -123,11 +100,11 @@ cleanup() {
       nonexistent)
         # The DB container did not exist before this run. Stop and remove only
         # that container; never use `compose down`, and never remove volumes.
-        if ! "${compose_argv[@]}" stop "$db_service" >"$log_dir/db-stop.log" 2>&1; then
+        if ! docker compose stop db >"$log_dir/db-stop.log" 2>&1; then
           echo 'smoke: cleanup failed to stop the temporary DB.' >&2
           cleanup_failed=1
         fi
-        if ! "${compose_argv[@]}" rm -f "$db_service" >"$log_dir/db-rm.log" 2>&1; then
+        if ! docker compose rm -f db >"$log_dir/db-rm.log" 2>&1; then
           echo 'smoke: cleanup failed to remove the temporary DB container.' >&2
           cleanup_failed=1
         fi
@@ -171,16 +148,16 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if ! running_services="$("${compose_argv[@]}" ps --status running --services "$db_service" 2>"$log_dir/db-state.err")"; then
+if ! running_services="$(docker compose ps --status running --services db 2>"$log_dir/db-state.err")"; then
   echo 'smoke: could not inspect the Compose db state; refusing to change DB state.' >&2
   exit 1
 fi
-if printf '%s\n' "$running_services" | grep -Fxq "$db_service"; then
+if printf '%s\n' "$running_services" | grep -Fxq db; then
   db_state='running'
-elif ! existing_services="$("${compose_argv[@]}" ps -a --services "$db_service" 2>>"$log_dir/db-state.err")"; then
+elif ! existing_services="$(docker compose ps -a --services db 2>>"$log_dir/db-state.err")"; then
   echo 'smoke: could not inspect whether the Compose db exists; refusing to change DB state.' >&2
   exit 1
-elif printf '%s\n' "$existing_services" | grep -Fxq "$db_service"; then
+elif printf '%s\n' "$existing_services" | grep -Fxq db; then
   db_state='stopped_existing'
 else
   db_state='nonexistent'
@@ -259,4 +236,4 @@ fi
 
 echo 'smoke: /healthz -> {"status":"ok"}'
 echo 'smoke: /readyz -> {"status":"ready"}'
-echo 'smoke: checks passed; stopping services (DB volume is retained).'
+echo 'smoke: checks passed; restoring the preflight DB state (DB volume is retained).'
