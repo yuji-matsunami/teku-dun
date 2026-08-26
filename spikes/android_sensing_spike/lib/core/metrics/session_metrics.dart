@@ -86,7 +86,21 @@ class Gap {
     required this.duration,
     required this.position,
     this.cause = GapCause.unexplained,
+    this.displacementMeters,
+    this.impliedSpeedKmh,
   });
+
+  /// 欠損の両端のサンプル間の直線距離 (メートル)。
+  /// 端点が無い欠損 (開始直後・終了直前・セッション全体) では `null`。
+  final double? displacementMeters;
+
+  /// [displacementMeters] を欠損時間で割った平均速度 (km/h)。
+  ///
+  /// __静止判定の主たる根拠。__ 「その間に実際どれだけ動いたか」を
+  /// 直接測っているため、ライブラリ自身の静止検知より信頼できる。
+  /// 実機では fbg が、実際に止まってから 15 分後にようやく
+  /// motionChange を発火した例が観測されている。
+  final double? impliedSpeedKmh;
 
   /// 欠損の原因の分類。
   /// 静止区間の情報が渡されなかった場合は、すべて [GapCause.unexplained] になる。
@@ -254,6 +268,7 @@ class SessionMetrics {
     double accuracyRejectMeters = 50,
     List<MotionChangeRecord> motionChanges = const <MotionChangeRecord>[],
     double stationaryOverlapThreshold = 0.8,
+    double stationarySpeedThresholdKmh = 1.0,
   }) {
     // 静止区間を組み立てる。渡されなければ空になり、
     // すべての欠損が「原因不明」として扱われる (従来どおりの挙動)。
@@ -305,12 +320,23 @@ class SessionMetrics {
       final diff = rawDiff.isNegative ? Duration.zero : rawDiff;
       intervals.add(diff);
       if (diff > gapThreshold) {
+        // 欠損の両端がどれだけ離れているかを測る。
+        // ほとんど動いていなければ、その間は歩いていなかったということ。
+        final displacement = _haversineMeters(
+          prev.latitude,
+          prev.longitude,
+          cur.latitude,
+          cur.longitude,
+        );
+        final seconds = diff.inMicroseconds / Duration.microsecondsPerSecond;
         gaps.add(
           Gap(
             from: prev.recordedAt,
             to: cur.recordedAt,
             duration: diff,
             position: GapPosition.interior,
+            displacementMeters: displacement,
+            impliedSpeedKmh: seconds > 0 ? displacement / seconds * 3.6 : null,
           ),
         );
       }
@@ -385,21 +411,49 @@ class SessionMetrics {
         covered += iv.overlapWith(g.from, g.to);
       }
       if (covered > g.duration) covered = g.duration;
-      final uncovered = g.duration - covered;
-      stationaryGapDuration += covered;
-      unexplainedGapDuration += uncovered;
 
-      // 表示用のラベルは「大半がどちらだったか」で決める。
+      // __判定の優先順位__
+      //
+      // 1. 欠損中の実測変位が分かるなら、それだけで決める。
+      //    その間に実際どれだけ動いたかを直接測っているため最も確実で、
+      //    ライブラリ自身の静止検知より信頼できる。
+      //    実機では fbg が、実際に止まってから 15 分後にようやく
+      //    motionChange を発火した例を観測している。
+      //    ここで motionChange の重なり分を差し引くと、
+      //    「歩いていたのに静止として免罪される」ことになる。
+      //
+      // 2. 変位が測れない欠損 (開始直後・終了直前・セッション全体) だけ、
+      //    motionChange の重なりを根拠に使う。
+      final speed = g.impliedSpeedKmh;
+      if (speed != null) {
+        if (speed < stationarySpeedThresholdKmh) {
+          stationaryGapDuration += g.duration;
+        } else {
+          unexplainedGapDuration += g.duration;
+        }
+      } else {
+        final uncovered = g.duration - covered;
+        stationaryGapDuration += covered;
+        unexplainedGapDuration += uncovered;
+      }
+
       final ratio = g.duration.inMicroseconds == 0
           ? 0.0
           : covered.inMicroseconds / g.duration.inMicroseconds;
+      final speedForLabel = g.impliedSpeedKmh;
       classified.add(
         Gap(
           from: g.from,
           to: g.to,
           duration: g.duration,
           position: g.position,
-          cause: ratio >= stationaryOverlapThreshold
+          displacementMeters: g.displacementMeters,
+          impliedSpeedKmh: g.impliedSpeedKmh,
+          cause:
+              (speedForLabel != null &&
+                  speedForLabel < stationarySpeedThresholdKmh)
+              ? GapCause.stationary
+              : (speedForLabel == null && ratio >= stationaryOverlapThreshold)
               ? GapCause.stationary
               : GapCause.unexplained,
         ),
@@ -600,6 +654,7 @@ class SessionMetrics {
       '(移動中の ${(unexplainedGapRatio * 100).toStringAsFixed(1)}%)',
     );
     buf.writeln('  ※ ライブラリの比較にはこの「原因不明」を使うこと');
+    buf.writeln('  ※ 静止判定は欠損中の実測変位から行う (1.0km/h 未満を静止)');
     if (stationaryDuration > Duration.zero) {
       buf.writeln('静止していた時間: ${_formatDuration(stationaryDuration)}');
     } else {
@@ -622,9 +677,14 @@ class SessionMetrics {
         '${breakdown.entries.map((e) => '${e.key} ${_formatDuration(e.value)}').join(', ')}',
       );
       for (final g in gaps) {
+        final speed = g.impliedSpeedKmh;
+        final moved = speed != null
+            ? ' 変位${g.displacementMeters!.toStringAsFixed(0)}m '
+                  '(${speed.toStringAsFixed(1)}km/h)'
+            : '';
         buf.writeln(
-          '  - ${g.positionLabel} ${_formatDuration(g.duration)} '
-          '[${g.causeLabel}]',
+          '  - ${g.positionLabel} ${_formatDuration(g.duration)}'
+          '$moved [${g.causeLabel}]',
         );
       }
       final tail = gaps.where(

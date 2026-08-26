@@ -445,17 +445,22 @@ void main() {
   // ライブラリ採否の結論が逆転する。
   group('欠損の原因分類', () {
     // 20分のセッション。5分〜13分の8分間、サンプルが来ない。
-    List<LocationSample> withMiddleGap() {
+    //
+    // [movedMetersDuringGap] は欠損中に進んだ距離。
+    // 変位ベースの判定を効かせるため、静止時と歩行時を作り分ける。
+    List<LocationSample> withMiddleGap({double movedMetersDuringGap = 10}) {
       final times = <int>[
         for (var i = 0; i < 30; i++) i * 10, // 0〜290秒
         for (var i = 0; i < 42; i++) 780 + i * 10, // 780〜1190秒
       ];
+      // 緯度 1 度 ≒ 111.19km。
+      final jump = movedMetersDuringGap / 111190.0;
       return [
         for (var i = 0; i < times.length; i++)
           _sample(
             seq: i + 1,
             recordedAt: base.add(Duration(seconds: times[i])),
-            latitude: 35.0 + i * 0.0001,
+            latitude: 35.0 + i * 0.0000001 + (i >= 30 ? jump : 0),
             longitude: 139.0,
             accuracy: 8,
           ),
@@ -488,9 +493,10 @@ void main() {
       expect(metrics.stationaryGapDuration, greaterThan(Duration.zero));
     });
 
-    test('静止イベントが無ければ同じ欠損が unexplained になる', () {
+    test('欠損中に歩いていれば unexplained になる', () {
       final metrics = SessionMetrics.compute(
-        withMiddleGap(),
+        // 490秒で 600m ≒ 4.4km/h。歩いている。
+        withMiddleGap(movedMetersDuringGap: 600),
         sessionStart: base,
         sessionEnd: base.add(const Duration(minutes: 20)),
       );
@@ -505,9 +511,8 @@ void main() {
     });
 
     test('動いているのに取れていない欠損は静止イベントがあっても unexplained', () {
-      // 静止していたのは欠損とは無関係な、ごく短い区間だけ。
       final metrics = SessionMetrics.compute(
-        withMiddleGap(),
+        withMiddleGap(movedMetersDuringGap: 600),
         sessionStart: base,
         sessionEnd: base.add(const Duration(minutes: 20)),
         motionChanges: [
@@ -604,8 +609,8 @@ void main() {
   });
 
   test('静止分と原因不明分の合計は必ず総欠損時間に一致する', () {
-    // 欠損の一部だけが静止と重なるケース。丸ごと振り分ける実装では
-    // 合計が総欠損時間とずれ、移動中の欠損率が 100% を超えていた。
+    // 変位が測れる欠損では、変位だけで判定する。
+    // 1.1km を 10 分 = 6.7km/h なので歩行とみなし、全体が原因不明になる。
     final samples = [
       _sample(seq: 1, recordedAt: base, latitude: 35.0, longitude: 139.0),
       _sample(
@@ -637,7 +642,49 @@ void main() {
       metrics.totalGapDuration,
     );
     expect(metrics.unexplainedGapRatio, lessThanOrEqualTo(1.0));
+    // 静止イベントが重なっていても、実際に歩いていたので免罪しない。
+    expect(metrics.stationaryGapDuration, Duration.zero);
+    expect(metrics.unexplainedGapDuration, const Duration(minutes: 10));
+  });
+
+  test('変位を測れない末尾欠損では motionChange を根拠に使う', () {
+    // 末尾欠損には終端のサンプルが無いため変位を測れない。
+    // この場合に限り、静止イベントの重なりで按分する。
+    final samples = [
+      _sample(seq: 1, recordedAt: base, latitude: 35.0, longitude: 139.0),
+      _sample(
+        seq: 2,
+        recordedAt: base.add(const Duration(seconds: 30)),
+        latitude: 35.0001,
+        longitude: 139.0,
+      ),
+    ];
+
+    final metrics = SessionMetrics.compute(
+      samples,
+      sessionStart: base,
+      sessionEnd: base.add(const Duration(minutes: 10)),
+      motionChanges: [
+        MotionChangeRecord(
+          at: base.add(const Duration(minutes: 4)),
+          isMoving: false,
+        ),
+        MotionChangeRecord(
+          at: base.add(const Duration(minutes: 7)),
+          isMoving: true,
+        ),
+      ],
+    );
+
+    final tail = metrics.gaps
+        .where((g) => g.position == GapPosition.tail)
+        .toList();
+    expect(tail, hasLength(1));
+    expect(tail.first.impliedSpeedKmh, isNull);
     expect(metrics.stationaryGapDuration, const Duration(minutes: 3));
-    expect(metrics.unexplainedGapDuration, const Duration(minutes: 7));
+    expect(
+      metrics.stationaryGapDuration + metrics.unexplainedGapDuration,
+      metrics.totalGapDuration,
+    );
   });
 }
