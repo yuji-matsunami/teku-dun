@@ -26,6 +26,57 @@ enum GapPosition {
   whole,
 }
 
+/// 欠損の原因の分類。
+///
+/// __この区別が比較の成否を分ける。__
+/// 両ライブラリとも、静止を検知すると GPS を止めて電池を節約する。
+/// そのため「静止中に位置が来ない」のは正常な動作であって、失敗ではない。
+///
+/// 一方、動いているのに位置が来ない区間は、ライブラリまたは OS の
+/// 省電力制御によって計測が実際に止まっていたことを意味する。
+/// 両者を一緒に数えると、正しく省電力していたライブラリほど
+/// 欠損率が高く見えてしまい、評価が逆転する。
+enum GapCause {
+  /// 静止区間に収まっている欠損。省電力が働いた結果であり、失敗ではない。
+  stationary,
+
+  /// 静止していないのに位置が取れていない欠損。
+  /// __これが本当に問題視すべき欠損。__
+  unexplained,
+}
+
+/// `motionChange` イベント 1 件分。
+///
+/// 静止区間を組み立てるために使う。ログ (JSONL) の
+/// `kind == "motionChange"` イベントから作る。
+@immutable
+class MotionChangeRecord {
+  const MotionChangeRecord({required this.at, required this.isMoving});
+
+  /// イベント発生時刻 (UTC)。
+  final DateTime at;
+
+  /// このイベント以降、移動中か静止中か。
+  final bool isMoving;
+}
+
+/// 静止していた区間。
+@immutable
+class StationaryInterval {
+  const StationaryInterval({required this.from, required this.to});
+
+  final DateTime from;
+  final DateTime to;
+
+  /// [from]〜[to] と、指定区間との重なりの長さ。
+  Duration overlapWith(DateTime start, DateTime end) {
+    final s = start.isAfter(from) ? start : from;
+    final e = end.isBefore(to) ? end : to;
+    final d = e.difference(s);
+    return d.isNegative ? Duration.zero : d;
+  }
+}
+
 /// 検出された「欠損 (位置情報が取れていない区間)」。
 @immutable
 class Gap {
@@ -34,7 +85,22 @@ class Gap {
     required this.to,
     required this.duration,
     required this.position,
+    this.cause = GapCause.unexplained,
   });
+
+  /// 欠損の原因の分類。
+  /// 静止区間の情報が渡されなかった場合は、すべて [GapCause.unexplained] になる。
+  final GapCause cause;
+
+  /// 表示用の原因ラベル。
+  String get causeLabel {
+    switch (cause) {
+      case GapCause.stationary:
+        return '静止中';
+      case GapCause.unexplained:
+        return '原因不明';
+    }
+  }
 
   /// 欠損区間の開始。
   final DateTime from;
@@ -89,6 +155,10 @@ class SessionMetrics {
     required this.batteryDropPerHour,
     required this.activityHistogram,
     required this.movingSampleCount,
+    required this.unexplainedGapDuration,
+    required this.unexplainedGapRatio,
+    required this.stationaryGapDuration,
+    required this.stationaryDuration,
   });
 
   /// サンプル件数。
@@ -114,7 +184,29 @@ class SessionMetrics {
 
   /// [totalGapDuration] / [wallClockDuration]。
   /// [wallClockDuration] が 0 の場合は 0.0 とする。
+  ///
+  /// __この値だけで良し悪しを判断してはいけない。__ 静止中の省電力による
+  /// 正常な欠損も含まれるため、正しく省電力しているライブラリほど
+  /// 悪く見える。比較には [unexplainedGapRatio] を使うこと。
   final double gapRatio;
+
+  /// 静止していないのに位置が取れていなかった時間の合計。
+  /// __ライブラリの比較で見るべきはこちら。__
+  final Duration unexplainedGapDuration;
+
+  /// [unexplainedGapDuration] を「移動していた時間」で割った比率。
+  ///
+  /// 分母から静止時間を除いてあるため、
+  /// 「動いている間にどれだけ取り逃したか」を表す。
+  /// 移動時間が 0 の場合は 0.0 とする。
+  final double unexplainedGapRatio;
+
+  /// 静止区間に収まっていた欠損の合計時間 (省電力が働いた結果)。
+  final Duration stationaryGapDuration;
+
+  /// motionChange から算出した、静止していた時間の合計。
+  /// motionChange が渡されなかった場合は [Duration.zero]。
+  final Duration stationaryDuration;
 
   /// Haversine 公式で積算した総移動距離 (メートル)。
   /// 精度が悪いサンプル (accuracy > accuracyRejectMeters) を含む区間は除外する。
@@ -160,7 +252,16 @@ class SessionMetrics {
     int? batteryAtEnd,
     Duration gapThreshold = const Duration(seconds: 60),
     double accuracyRejectMeters = 50,
+    List<MotionChangeRecord> motionChanges = const <MotionChangeRecord>[],
+    double stationaryOverlapThreshold = 0.8,
   }) {
+    // 静止区間を組み立てる。渡されなければ空になり、
+    // すべての欠損が「原因不明」として扱われる (従来どおりの挙動)。
+    final stationary = buildStationaryIntervals(
+      motionChanges,
+      sessionStart: sessionStart,
+      sessionEnd: sessionEnd,
+    );
     final sorted = List<LocationSample>.of(samples)
       ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
 
@@ -263,6 +364,68 @@ class SessionMetrics {
       );
     }
 
+    // 各欠損を「静止中」か「原因不明」かに分類する。
+    //
+    // 欠損の大半 (既定 80% 以上) が静止区間に収まっていれば、
+    // 省電力が働いた正常な動作とみなす。
+    // そうでなければ、動いているのに取得できていなかったということ。
+    // 欠損ごとに、静止区間と重なっている分と、そうでない分に分ける。
+    //
+    // __欠損を丸ごとどちらかに振り分けてはならない。__ 一部だけ静止と
+    // 重なる欠損では合計が実態と合わなくなり、実データでは
+    // 「移動中の欠損率 291%」のような破綻した値が出た。
+    // 重なった分だけを静止として差し引き、残りを原因不明として数える。
+    // こうすれば両者の合計が必ず総欠損時間に一致する。
+    final classified = <Gap>[];
+    var unexplainedGapDuration = Duration.zero;
+    var stationaryGapDuration = Duration.zero;
+    for (final g in gaps) {
+      var covered = Duration.zero;
+      for (final iv in stationary) {
+        covered += iv.overlapWith(g.from, g.to);
+      }
+      if (covered > g.duration) covered = g.duration;
+      final uncovered = g.duration - covered;
+      stationaryGapDuration += covered;
+      unexplainedGapDuration += uncovered;
+
+      // 表示用のラベルは「大半がどちらだったか」で決める。
+      final ratio = g.duration.inMicroseconds == 0
+          ? 0.0
+          : covered.inMicroseconds / g.duration.inMicroseconds;
+      classified.add(
+        Gap(
+          from: g.from,
+          to: g.to,
+          duration: g.duration,
+          position: g.position,
+          cause: ratio >= stationaryOverlapThreshold
+              ? GapCause.stationary
+              : GapCause.unexplained,
+        ),
+      );
+    }
+    gaps
+      ..clear()
+      ..addAll(classified);
+
+    final stationaryDuration = stationary.fold<Duration>(
+      Duration.zero,
+      (sum, iv) => sum + iv.to.difference(iv.from),
+    );
+    // 分母は「移動していた時間」。静止時間を除くことで、
+    // 正しく省電力しているライブラリが不利にならないようにする。
+    final movingDuration = _clampNonNegative(
+      wallClockDuration - stationaryDuration,
+    );
+    final unexplainedGapRatio = movingDuration.inMicroseconds == 0
+        ? 0.0
+        : math.min(
+            1.0,
+            unexplainedGapDuration.inMicroseconds /
+                movingDuration.inMicroseconds,
+          );
+
     final totalGapDuration = gaps.fold<Duration>(
       Duration.zero,
       (sum, g) => sum + g.duration,
@@ -316,6 +479,10 @@ class SessionMetrics {
       batteryDropPerHour: batteryDropPerHour,
       activityHistogram: activityHistogram,
       movingSampleCount: movingSampleCount,
+      unexplainedGapDuration: unexplainedGapDuration,
+      unexplainedGapRatio: unexplainedGapRatio,
+      stationaryGapDuration: stationaryGapDuration,
+      stationaryDuration: stationaryDuration,
     );
   }
 
@@ -354,6 +521,43 @@ class SessionMetrics {
     return values[_nearestRankIndex(values.length, percentile)];
   }
 
+  /// `motionChange` イベント列から静止区間を組み立てる。
+  ///
+  /// `isMoving == false` のイベントから、次の `isMoving == true` の
+  /// イベント (無ければセッション終了) までを静止区間とみなす。
+  ///
+  /// 同じ状態が連続する重複イベントは無視する。実機のログでは
+  /// 同一時刻に複数の motionChange が並ぶことがあるため。
+  static List<StationaryInterval> buildStationaryIntervals(
+    List<MotionChangeRecord> motionChanges, {
+    required DateTime sessionStart,
+    required DateTime sessionEnd,
+  }) {
+    if (motionChanges.isEmpty) return const <StationaryInterval>[];
+
+    final sorted = List<MotionChangeRecord>.of(motionChanges)
+      ..sort((a, b) => a.at.compareTo(b.at));
+
+    final intervals = <StationaryInterval>[];
+    DateTime? stoppedAt;
+    for (final m in sorted) {
+      if (!m.isMoving) {
+        // 既に静止中なら、最初の静止時刻を維持する。
+        stoppedAt ??= m.at;
+      } else if (stoppedAt != null) {
+        if (m.at.isAfter(stoppedAt)) {
+          intervals.add(StationaryInterval(from: stoppedAt, to: m.at));
+        }
+        stoppedAt = null;
+      }
+    }
+    // 静止したまま終わった場合は、セッション終了までを静止とみなす。
+    if (stoppedAt != null && sessionEnd.isAfter(stoppedAt)) {
+      intervals.add(StationaryInterval(from: stoppedAt, to: sessionEnd));
+    }
+    return intervals;
+  }
+
   /// 負の [Duration] を 0 に丸める。
   /// サンプルの時刻がセッション区間の外にある異常入力でも、
   /// 負の欠損時間を出さないようにするため。
@@ -387,7 +591,20 @@ class SessionMetrics {
     buf.writeln('最大取得間隔(サンプル間): ${_formatDuration(maxInterval)}');
     buf.writeln('欠損回数: ${gaps.length} 回 (閾値超過区間)');
     buf.writeln('総欠損時間: ${_formatDuration(totalGapDuration)}');
-    buf.writeln('欠損率: ${(gapRatio * 100).toStringAsFixed(1)}%');
+    buf.writeln('欠損率(静止含む・参考値): ${(gapRatio * 100).toStringAsFixed(1)}%');
+    buf.writeln(
+      '  うち静止中(省電力・正常): ${_formatDuration(stationaryGapDuration)}',
+    );
+    buf.writeln(
+      '★原因不明の欠損: ${_formatDuration(unexplainedGapDuration)} '
+      '(移動中の ${(unexplainedGapRatio * 100).toStringAsFixed(1)}%)',
+    );
+    buf.writeln('  ※ ライブラリの比較にはこの「原因不明」を使うこと');
+    if (stationaryDuration > Duration.zero) {
+      buf.writeln('静止していた時間: ${_formatDuration(stationaryDuration)}');
+    } else {
+      buf.writeln('静止していた時間: 判定なし (motionChange が記録されていない)');
+    }
     final maxGap = gaps.isEmpty
         ? Duration.zero
         : gaps.map((g) => g.duration).reduce((a, b) => a > b ? a : b);
@@ -404,6 +621,12 @@ class SessionMetrics {
         '欠損の内訳: '
         '${breakdown.entries.map((e) => '${e.key} ${_formatDuration(e.value)}').join(', ')}',
       );
+      for (final g in gaps) {
+        buf.writeln(
+          '  - ${g.positionLabel} ${_formatDuration(g.duration)} '
+          '[${g.causeLabel}]',
+        );
+      }
       final tail = gaps.where(
         (g) => g.position == GapPosition.tail || g.position == GapPosition.whole,
       );

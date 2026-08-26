@@ -227,12 +227,31 @@ class _SessionDetailPageState extends State<_SessionDetailPage> {
     // 依存しない。あわせて未終了である旨を画面に明示する。
     final endedAt = widget.meta.endedAt ?? _lastRecordedAt(rawEvents, samples);
 
+    // motionChange イベントを渡し、静止中の欠損と
+    // 「動いているのに取れていない」欠損を区別できるようにする。
+    // これを渡さないと、正しく省電力していたライブラリほど
+    // 欠損率が高く見え、比較の結論が逆転する。
+    final motionChanges = <MotionChangeRecord>[];
+    for (final json in rawEvents) {
+      if (json['type'] != 'event') continue;
+      if (json['kind'] != TrackingEventKind.motionChange) continue;
+      final at = json['at'];
+      final isMoving = json['isMoving'];
+      if (at is! String || isMoving is! bool) continue;
+      final parsed = DateTime.tryParse(at);
+      if (parsed == null) continue;
+      motionChanges.add(
+        MotionChangeRecord(at: parsed.toUtc(), isMoving: isMoving),
+      );
+    }
+
     final metrics = SessionMetrics.compute(
       samples,
       sessionStart: widget.meta.startedAt,
       sessionEnd: endedAt ?? widget.meta.startedAt,
       batteryAtStart: widget.meta.batteryAtStart,
       batteryAtEnd: widget.meta.batteryAtEnd,
+      motionChanges: motionChanges,
     );
 
     // 歩数と突き合わせ結果は JSONL のイベントにしか無い。

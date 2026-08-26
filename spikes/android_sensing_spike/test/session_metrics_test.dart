@@ -439,4 +439,205 @@ void main() {
       expect(metrics.totalGapDuration.isNegative, isFalse);
     });
   });
+
+  // 静止中の欠損と、動いているのに取れていない欠損の区別。
+  // ここを誤ると、正しく省電力しているライブラリほど悪く見え、
+  // ライブラリ採否の結論が逆転する。
+  group('欠損の原因分類', () {
+    // 20分のセッション。5分〜13分の8分間、サンプルが来ない。
+    List<LocationSample> withMiddleGap() {
+      final times = <int>[
+        for (var i = 0; i < 30; i++) i * 10, // 0〜290秒
+        for (var i = 0; i < 42; i++) 780 + i * 10, // 780〜1190秒
+      ];
+      return [
+        for (var i = 0; i < times.length; i++)
+          _sample(
+            seq: i + 1,
+            recordedAt: base.add(Duration(seconds: times[i])),
+            latitude: 35.0 + i * 0.0001,
+            longitude: 139.0,
+            accuracy: 8,
+          ),
+      ];
+    }
+
+    test('静止イベントに覆われた欠損は stationary に分類される', () {
+      final metrics = SessionMetrics.compute(
+        withMiddleGap(),
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 20)),
+        motionChanges: [
+          MotionChangeRecord(
+            at: base.add(const Duration(seconds: 285)),
+            isMoving: false,
+          ),
+          MotionChangeRecord(
+            at: base.add(const Duration(seconds: 785)),
+            isMoving: true,
+          ),
+        ],
+      );
+
+      final interior = metrics.gaps
+          .where((g) => g.position == GapPosition.interior)
+          .toList();
+      expect(interior, hasLength(1));
+      expect(interior.first.cause, GapCause.stationary);
+      expect(metrics.unexplainedGapDuration, Duration.zero);
+      expect(metrics.stationaryGapDuration, greaterThan(Duration.zero));
+    });
+
+    test('静止イベントが無ければ同じ欠損が unexplained になる', () {
+      final metrics = SessionMetrics.compute(
+        withMiddleGap(),
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 20)),
+      );
+
+      final interior = metrics.gaps
+          .where((g) => g.position == GapPosition.interior)
+          .toList();
+      expect(interior, hasLength(1));
+      expect(interior.first.cause, GapCause.unexplained);
+      expect(metrics.unexplainedGapDuration, greaterThan(Duration.zero));
+      expect(metrics.stationaryGapDuration, Duration.zero);
+    });
+
+    test('動いているのに取れていない欠損は静止イベントがあっても unexplained', () {
+      // 静止していたのは欠損とは無関係な、ごく短い区間だけ。
+      final metrics = SessionMetrics.compute(
+        withMiddleGap(),
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 20)),
+        motionChanges: [
+          MotionChangeRecord(
+            at: base.add(const Duration(seconds: 100)),
+            isMoving: false,
+          ),
+          MotionChangeRecord(
+            at: base.add(const Duration(seconds: 110)),
+            isMoving: true,
+          ),
+        ],
+      );
+
+      final interior = metrics.gaps
+          .where((g) => g.position == GapPosition.interior)
+          .toList();
+      expect(interior.first.cause, GapCause.unexplained);
+    });
+
+    test('原因不明の欠損率は分母から静止時間を除く', () {
+      // 20分のうち8分静止。原因不明の欠損は無い。
+      final metrics = SessionMetrics.compute(
+        withMiddleGap(),
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 20)),
+        motionChanges: [
+          MotionChangeRecord(
+            at: base.add(const Duration(seconds: 285)),
+            isMoving: false,
+          ),
+          MotionChangeRecord(
+            at: base.add(const Duration(seconds: 785)),
+            isMoving: true,
+          ),
+        ],
+      );
+
+      expect(metrics.unexplainedGapRatio, 0.0);
+      // 従来の欠損率は静止分を含むので 0 より大きいままである。
+      expect(metrics.gapRatio, greaterThan(0.0));
+      expect(metrics.stationaryDuration, const Duration(seconds: 500));
+    });
+
+    test('静止したまま終わった場合はセッション終了までを静止とみなす', () {
+      final intervals = SessionMetrics.buildStationaryIntervals(
+        [
+          MotionChangeRecord(
+            at: base.add(const Duration(minutes: 5)),
+            isMoving: false,
+          ),
+        ],
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 20)),
+      );
+
+      expect(intervals, hasLength(1));
+      expect(intervals.first.to, base.add(const Duration(minutes: 20)));
+    });
+
+    test('同じ状態が連続する重複イベントを無視する', () {
+      final intervals = SessionMetrics.buildStationaryIntervals(
+        [
+          MotionChangeRecord(at: base, isMoving: false),
+          MotionChangeRecord(at: base, isMoving: false),
+          MotionChangeRecord(
+            at: base.add(const Duration(minutes: 3)),
+            isMoving: true,
+          ),
+          MotionChangeRecord(
+            at: base.add(const Duration(minutes: 4)),
+            isMoving: true,
+          ),
+        ],
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 20)),
+      );
+
+      expect(intervals, hasLength(1));
+      expect(intervals.first.from, base);
+      expect(intervals.first.to, base.add(const Duration(minutes: 3)));
+    });
+
+    test('motionChange が空でも例外を投げず従来どおり動く', () {
+      final metrics = SessionMetrics.compute(
+        withMiddleGap(),
+        sessionStart: base,
+        sessionEnd: base.add(const Duration(minutes: 20)),
+        motionChanges: const [],
+      );
+      expect(metrics.stationaryDuration, Duration.zero);
+      expect(metrics.toReportString(), contains('原因不明の欠損'));
+    });
+  });
+
+  test('静止分と原因不明分の合計は必ず総欠損時間に一致する', () {
+    // 欠損の一部だけが静止と重なるケース。丸ごと振り分ける実装では
+    // 合計が総欠損時間とずれ、移動中の欠損率が 100% を超えていた。
+    final samples = [
+      _sample(seq: 1, recordedAt: base, latitude: 35.0, longitude: 139.0),
+      _sample(
+        seq: 2,
+        recordedAt: base.add(const Duration(minutes: 10)),
+        latitude: 35.01,
+        longitude: 139.0,
+      ),
+    ];
+
+    final metrics = SessionMetrics.compute(
+      samples,
+      sessionStart: base,
+      sessionEnd: base.add(const Duration(minutes: 10)),
+      motionChanges: [
+        MotionChangeRecord(
+          at: base.add(const Duration(minutes: 2)),
+          isMoving: false,
+        ),
+        MotionChangeRecord(
+          at: base.add(const Duration(minutes: 5)),
+          isMoving: true,
+        ),
+      ],
+    );
+
+    expect(
+      metrics.stationaryGapDuration + metrics.unexplainedGapDuration,
+      metrics.totalGapDuration,
+    );
+    expect(metrics.unexplainedGapRatio, lessThanOrEqualTo(1.0));
+    expect(metrics.stationaryGapDuration, const Duration(minutes: 3));
+    expect(metrics.unexplainedGapDuration, const Duration(minutes: 7));
+  });
 }
