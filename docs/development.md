@@ -210,7 +210,7 @@ task verify FLUTTER=/private/tmp/flutter-3.47.0/bin/flutter
 ## DB込みの統合スモークテスト
 
 次のコマンドは、DB起動、マイグレーション、Go APIの一時ビルド・起動、`healthz`/
-`readyz`のcurl検証、API停止、必要な場合の`task db:down`までを一度に行います。
+`readyz`のcurl検証、API停止、開始前の状態に応じたDBの復元までを一度に行います。
 
 ```sh
 task smoke
@@ -226,12 +226,10 @@ task smoke SMOKE_API_PORT=18081
 `SMOKE_API_TIMEOUT`はAPI起動待ち時間を秒で指定する正の整数です（デフォルト30秒）。
 `0`や負数、数字以外は入力エラーとして拒否します。
 
-Composeサービス、APIディレクトリ、接続先アドレスもTask変数で上書きできます。
-`COMPOSE`は信頼できるComposeコマンド文字列として指定してください。
+APIディレクトリと接続先アドレスはTask変数で上書きできます。
 
 ```sh
-task smoke COMPOSE='docker compose -f compose.dev.yaml' DB_SERVICE=db API_DIR=api \
-  SMOKE_API_ADDR=127.0.0.1 SMOKE_API_PORT=18081
+task smoke API_DIR=api SMOKE_API_ADDR=127.0.0.1 SMOKE_API_PORT=18081
 ```
 
 成功時の期待値は以下です（レスポンスボディはJSONです）。
@@ -244,10 +242,11 @@ curl -fsS http://127.0.0.1:18080/readyz
 ```
 
 スモークテストは開始時にComposeの`db`がrunningかを確認します。開始前からrunningだった
-既存DBは、成功・失敗・入力検証エラーのいずれでも停止せず保持します。開始時に停止していて
-このスモークテストが起動したDBだけ、終了時に`task db:down`で停止します。いずれの場合も
+既存DBは、成功・失敗・入力検証エラーのいずれでも停止せず保持します。開始時に停止していた
+DBは停止状態へ戻し、存在しなかったDBコンテナは終了時に停止・削除します。いずれの場合も
 `docker compose down -v`は実行せず、DBボリュームは保持されます。DBを完全に初期化する操作は
-意図的に別ターゲットです。
+意図的に別ターゲットです。同じComposeプロジェクトに対する`task smoke`の並行実行は
+サポートしません。
 
 ```sh
 task db:reset CONFIRM_DB_RESET=1
@@ -304,7 +303,7 @@ task flutter:verify
 - Go APIは`Ctrl-C`で停止します。別ターミナルで起動したAPIを残したままにしないでください。
 - DBコンテナは`task db:down`で停止します。この操作はボリュームを保持します。
 - 再開時は`task db:up`を実行し、必要なら`task db:migrate`を実行します。
-- `task smoke`は成功・失敗のどちらでも一時APIを後片付けします。DBはこの実行が起動した場合だけ`task db:down`で停止し、開始前からrunningだったDBは保持します。
+- `task smoke`は成功・失敗のどちらでも一時APIを後片付けします。開始前からrunningだったDBは保持し、停止していたDBは停止状態へ戻し、存在しなかったDBコンテナは停止・削除します。
 
 ## トラブルシューティング
 
