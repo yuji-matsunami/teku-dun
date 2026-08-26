@@ -1,6 +1,6 @@
 services:
   db:
-    # The pinned PostGIS digest is amd64-only; use emulation on Apple Silicon for one image everywhere.
+    # 固定したPostGISイメージはamd64専用のため、Apple Siliconではエミュレーションを使用する。
     platform: linux/amd64
     image: postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
     environment:
@@ -12,8 +12,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      # The entrypoint briefly starts a socket-only server while initializing a
-      # clean volume. Check TCP so migrations wait for the final server.
+      # クリーンなボリュームの初期化中はソケット専用の一時サーバーが起動するため、
+      # TCPで確認し、マイグレーションが最終的なサーバーの起動を待つようにする。
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
@@ -30,7 +30,7 @@ services:
     volumes:
       - ./db/migrations:/migrations:ro
     environment:
-      # Keep the migration URL separate from the future Go host-side DATABASE_URL.
+      # マイグレーション用URLは、将来Go APIがホスト側で使うDATABASE_URLとは分けて管理する。
       DATABASE_URL: ${MIGRATE_DATABASE_URL:-postgres://teku_dun:teku_dun@db:5432/teku_dun?sslmode=disable}
     entrypoint: ["/bin/sh", "-c"]
     command:
