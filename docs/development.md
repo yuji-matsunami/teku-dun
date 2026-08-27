@@ -63,18 +63,12 @@ SDK Platform-Tools、Android Emulatorをインストールしてください。`
    cd teku-dun
    ```
 
-2. ローカル設定を作成します。`.env` はGit管理対象外です。
+   ローカルDBは`compose.yaml`に記載した開発専用の固定値を使うため、`.env`などの
+   追加設定は不要です。この資格情報を本番環境では使用しないでください。本番では、
+   API用とマイグレーション用の資格情報を分離し、Secret Managerなどから実行時に
+   注入する方針です。具体的な設定はデプロイ環境を扱うIssueで設計します。
 
-   ```sh
-   cp .env.example .env
-   ```
-
-   `.env.example` にはローカルDBのデフォルト値だけを置いています。パスワードや
-   トークンなどの秘密を`.env`、ソース、ログ、コミットに書かないでください。
-   DBの値を変更する場合は、Composeの`POSTGRES_*`と、マイグレーションコンテナ用の
-   `MIGRATE_DATABASE_URL`（URL中の資格情報はpercent-encode）を一致させます。
-
-3. FVMで固定バージョンのFlutterを取得し、Flutterの依存関係を取得します。
+2. FVMで固定バージョンのFlutterを取得し、Flutterの依存関係を取得します。
 
    ```sh
    cd mobile/app
@@ -95,7 +89,7 @@ SDK Platform-Tools、Android Emulatorをインストールしてください。`
    で実行します。Dart SDKをホストにインストール済みで、ホストのDartを使いたい場合だけ
    `DART_MODE=host`を指定します（例: `task dart:verify DART_MODE=host`）。
 
-4. PostGISを起動し、マイグレーションを適用します。
+3. PostGISを起動し、マイグレーションを適用します。
 
    ```sh
    task db:up
@@ -106,7 +100,7 @@ SDK Platform-Tools、Android Emulatorをインストールしてください。`
    `task db:up`はhealthcheckが成功するまで待ち、`task db:migrate`は未適用のマイグレーションを
    適用します。`task db:verify`は`PostGIS_Version()`の結果を表示します。
 
-5. OpenAPI契約を検証します。
+4. OpenAPI契約を検証します。
 
    ```sh
    task openapi:validate
@@ -134,10 +128,10 @@ task api:run
 ```
 
 APIはデフォルトで`API_ADDR=:8080`、DBは`127.0.0.1:5432`に接続します。
-別のアドレスやポートを使う場合は、APIプロセスに環境変数を渡します。
+別のアドレスで待ち受ける場合は、APIプロセスに環境変数を渡します。
 
 ```sh
-API_ADDR=0.0.0.0:8080 DATABASE_URL='postgres://teku_dun:teku_dun@127.0.0.1:5432/teku_dun?sslmode=disable' task api:run
+API_ADDR=0.0.0.0:8080 task api:run
 ```
 
 別のターミナルで、Androidエミュレータを起動してからFlutterアプリを起動します。
@@ -319,7 +313,6 @@ task db:verify
 curl -i http://127.0.0.1:8080/readyz
 ```
 
-DBポートを変更した場合は、APIの`DATABASE_URL`も同じポートに変更してください。
 DBコンテナのログは`docker compose logs db`で確認できます。
 
 ### AndroidからAPIに接続できない
@@ -340,7 +333,8 @@ AVDを作成して起動します。`fvm flutter doctor -v`で不足している
 ### Docker、ポート、またはApple Siliconの問題
 
 - Docker Desktopを起動し、`docker info`と`docker compose version`が成功することを確認します。
-- DBの`5432`、通常APIの`8080`、スモークテストの`18080`が他のプロセスに占有されていないか確認します。DBポートは`DB_PORT=15432 task db:up`のように変更できますが、APIの`DATABASE_URL`も合わせて変更します。
+- DBの`5432`、通常APIの`8080`、スモークテストの`18080`が他のプロセスに占有されていないか確認します。DBの`5432`はローカル構成で固定しているため、競合するプロセスを停止してから`task db:up`を再実行します。
+- 旧構成の`.env`でDB名や資格情報を変更して初期化したvolumeは、現在の固定値と互換性がありません。データが必要なら先に退避・移行し、不要な場合だけ`task db:reset CONFIRM_DB_RESET=1`でvolumeを削除して作り直します。
 - ComposeのPostGISイメージは`linux/amd64`に固定されています。Apple SiliconではDockerのamd64エミュレーションが動作するため、初回起動やマイグレーションが遅くなることがあります。Docker Desktopのリソース不足やエミュレーションの警告は失敗とは限りません。
 - `task smoke`が既存APIポートを検出した場合は、残っているAPIを停止するか`SMOKE_API_PORT`を未使用ポートに変更します。既存プロセスのレスポンスをスモーク成功とは扱いません。
 
@@ -351,11 +345,12 @@ OpenAPIの変更後にGo/Dart生成を更新していない、または generato
 `task dart:build`を実行し、差分をレビューしてから再度`task verify`を実行します。
 生成ファイルを手で変更してチェックを回避しないでください。
 
-### `.env`や秘密が差分に出た
+### 秘密情報が差分に出た
 
 秘密を削除してからコミット履歴と作業ツリーを確認し、漏えいした資格情報はローテーション
-します。`.env.example`にはローカル開発に必要なプレースホルダーだけを置き、実際の秘密を
-追記してコミットしないでください。
+します。ローカルDBは固定の開発専用資格情報を使い、`.env`を必要としません。`.env`は
+将来のツールが作成した場合の誤コミット防止としてGit管理対象外にしています。本番の秘密を
+ローカルファイル、ソース、ログ、コミットへ書かないでください。
 
 ## Issue #4 の再実行チェックリスト
 
@@ -365,7 +360,6 @@ OpenAPIの変更後にGo/Dart生成を更新していない、または generato
 ### 端末不要のチェック
 
 - [ ] Go `1.24.6`、FVM管理Flutter `3.47.0`、Docker、Task `3.53.1`、curlを確認した。
-- [ ] `cp .env.example .env`を実行し、秘密をcommitしていない。
 - [ ] `task db:up`がhealthyになった。
 - [ ] `task db:migrate`が成功した。
 - [ ] `task db:verify`がPostGISのバージョンを表示した。
