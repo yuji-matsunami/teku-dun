@@ -4,11 +4,12 @@ services:
     platform: linux/amd64
     image: postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-teku_dun}
-      POSTGRES_USER: ${POSTGRES_USER:-teku_dun}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-teku_dun}
+      # ローカル開発専用の既知の値であり、本番の資格情報には使用しない。
+      POSTGRES_DB: teku_dun
+      POSTGRES_USER: teku_dun
+      POSTGRES_PASSWORD: teku_dun
     ports:
-      - "127.0.0.1:${DB_PORT:-5432}:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -30,8 +31,8 @@ services:
     volumes:
       - ./db/migrations:/migrations:ro
     environment:
-      # マイグレーション用URLは、将来Go APIがホスト側で使うDATABASE_URLとは分けて管理する。
-      DATABASE_URL: ${MIGRATE_DATABASE_URL:-postgres://teku_dun:teku_dun@db:5432/teku_dun?sslmode=disable}
+      # ローカル開発専用の固定資格情報でDBへ接続する。
+      DATABASE_URL: postgres://teku_dun:teku_dun@db:5432/teku_dun?sslmode=disable
     entrypoint: ["/bin/sh", "-c"]
     command:
       - migrate -path /migrations -database "$${DATABASE_URL}" $${MIGRATE_COMMAND:-up}
