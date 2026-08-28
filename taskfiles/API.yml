@@ -1,37 +1,24 @@
 version: '3'
 
 vars:
-  API_DIR: '{{.API_DIR | default "api"}}'
-  API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC | default "openapi/openapi.yaml"}}'
   OAPI_CODEGEN_MODULE: 'github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen'
 
 tasks:
   generate:
     desc: OpenAPIからGoサーバコードを生成する
-    dir: '{{.ROOT_DIR}}'
-    env:
-      ROOT_DIR: '{{.ROOT_DIR}}'
-      API_DIR: '{{.API_DIR}}'
-      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    dir: '{{.ROOT_DIR}}/api'
     cmds:
       - |
-        set -u
-        cd "$ROOT_DIR/$API_DIR"
         go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
           --config oapi-codegen.yaml \
-          "$ROOT_DIR/$API_DIR/../$API_OPENAPI_SPEC"
+          ../openapi/openapi.yaml
 
   generate-check:
     desc: OpenAPIからのGo生成物にドリフトがないことを検査する
-    dir: '{{.ROOT_DIR}}'
-    env:
-      ROOT_DIR: '{{.ROOT_DIR}}'
-      API_DIR: '{{.API_DIR}}'
-      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    dir: '{{.ROOT_DIR}}/api'
     cmds:
       - |
         set -u
-        cd "$ROOT_DIR/$API_DIR"
         tmp_dir=''
         cleanup() {
           exit_code=$?
@@ -53,7 +40,7 @@ tasks:
         fi
         if ! go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
           --config "$tmp_dir/oapi-codegen.yaml" \
-          "$ROOT_DIR/$API_DIR/../$API_OPENAPI_SPEC"; then
+          ../openapi/openapi.yaml; then
           echo 'Go code generation failed' >&2
           exit 1
         fi
@@ -64,33 +51,21 @@ tasks:
 
   test:
     desc: Go APIのユニットテストを実行する
-    dir: '{{.ROOT_DIR}}'
-    env:
-      ROOT_DIR: '{{.ROOT_DIR}}'
-      API_DIR: '{{.API_DIR}}'
-      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    dir: '{{.ROOT_DIR}}/api'
     cmds:
-      - cd "$ROOT_DIR/$API_DIR" && go test ./...
+      - go test ./...
 
   vet:
     desc: Go APIをgo vetで検査する
-    dir: '{{.ROOT_DIR}}'
-    env:
-      ROOT_DIR: '{{.ROOT_DIR}}'
-      API_DIR: '{{.API_DIR}}'
-      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    dir: '{{.ROOT_DIR}}/api'
     cmds:
-      - cd "$ROOT_DIR/$API_DIR" && go vet ./...
+      - go vet ./...
 
   run:
     desc: Go APIをローカル起動する
-    dir: '{{.ROOT_DIR}}'
-    env:
-      ROOT_DIR: '{{.ROOT_DIR}}'
-      API_DIR: '{{.API_DIR}}'
-      API_OPENAPI_SPEC: '{{.API_OPENAPI_SPEC}}'
+    dir: '{{.ROOT_DIR}}/api'
     cmds:
-      - cd "$ROOT_DIR/$API_DIR" && go run ./cmd/api
+      - go run ./cmd/api
 
   verify:
     desc: Go APIの生成物・テスト・静的検査をまとめて実行する
