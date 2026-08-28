@@ -32,14 +32,11 @@ func run(parent context.Context) error {
 		return fmt.Errorf("configuration error: %s", err)
 	}
 
-	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	db, err := newPostgresPool(parent, cfg.DatabaseURL)
 	if err != nil {
-		return errors.New("database configuration is invalid")
+		return err
 	}
-	db, err := pgxpool.NewWithConfig(parent, poolConfig)
-	if err != nil {
-		return errors.New("database connection failed")
-	}
+	defer db.Close()
 	postGIS := postGISChecker{pool: db}
 
 	router := chi.NewRouter()
@@ -62,7 +59,6 @@ func run(parent context.Context) error {
 
 	select {
 	case err := <-serverErrors:
-		db.Close()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
@@ -71,12 +67,24 @@ func run(parent context.Context) error {
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancelShutdown()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			db.Close()
 			return errors.New("graceful shutdown failed")
 		}
-		db.Close()
 		return nil
 	}
+}
+
+func newPostgresPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, errors.New("database configuration is invalid")
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		return nil, errors.New("database pool creation failed")
+	}
+
+	return pool, nil
 }
 
 // postGISChecker makes readiness verify the extension used by the API, rather
