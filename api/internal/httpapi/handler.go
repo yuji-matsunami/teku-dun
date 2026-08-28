@@ -28,12 +28,9 @@ type Handler struct {
 	pingTimeout time.Duration
 }
 
-// NewHandler constructs a health/readiness handler. A non-positive timeout is
-// replaced with the same short default used by the process configuration.
+// NewHandler constructs a health/readiness handler from validated process
+// configuration and its database dependency.
 func NewHandler(db DBChecker, pingTimeout time.Duration) *Handler {
-	if pingTimeout <= 0 {
-		pingTimeout = 2 * time.Second
-	}
 	return &Handler{db: db, pingTimeout: pingTimeout}
 }
 
