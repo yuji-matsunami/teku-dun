@@ -26,8 +26,8 @@ func TestRunStopsOnContextCancellation(t *testing.T) {
 		done <- run(ctx)
 	}()
 
-	// Give ListenAndServe a chance to bind before exercising the cancellation
-	// path. The test does not need to know the ephemeral port.
+	// ListenAndServeが待ち受けを開始してからキャンセル経路を確認する。
+	// OSが選んだ一時ポートをテスト側で知る必要はない。
 	time.Sleep(50 * time.Millisecond)
 	cancel()
 

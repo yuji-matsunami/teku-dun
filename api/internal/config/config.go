@@ -1,4 +1,4 @@
-// Package config contains configuration loaded by the API process.
+// Package config はAPIプロセスの設定を読み込む。
 package config
 
 import (
@@ -20,8 +20,7 @@ const (
 	defaultShutdownTimeout   = 5 * time.Second
 )
 
-// Config is the process configuration. DatabaseURL is intentionally never
-// included in an API response or log message.
+// ConfigはAPIプロセスの設定を保持する。DatabaseURLはAPIレスポンスやログへ出力しない。
 type Config struct {
 	Address           string
 	DatabaseURL       string
@@ -33,9 +32,8 @@ type Config struct {
 	ShutdownTimeout   time.Duration
 }
 
-// Load reads configuration from environment variables and applies safe local
-// defaults. The default database URL points at the local PostGIS compose
-// service and is suitable for development only.
+// Loadは環境変数を読み込み、未指定の値にローカル開発用の既定値を設定する。
+// DatabaseURLの既定値はローカルのPostGIS Composeサービス専用である。
 func Load() (Config, error) {
 	cfg := Config{
 		Address:           envOrDefault("API_ADDR", defaultAddress),

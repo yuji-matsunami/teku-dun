@@ -19,8 +19,8 @@ import (
 
 func main() {
 	if err := run(context.Background()); err != nil {
-		// run returns deliberately sanitized errors. In particular, do not log
-		// DATABASE_URL or a raw database driver error here.
+		// runは機密情報を除いたエラーだけを返す。DATABASE_URLやDBドライバーの
+		// 生のエラーはここでログに出さない。
 		log.Print(err)
 		os.Exit(1)
 	}
@@ -87,8 +87,7 @@ func newPostgresPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, er
 	return pool, nil
 }
 
-// postGISChecker makes readiness verify the extension used by the API, rather
-// than only checking that a PostgreSQL socket accepts connections.
+// postGISCheckerはPostgreSQLへの接続だけでなく、APIが利用するPostGISも確認する。
 type postGISChecker struct {
 	pool *pgxpool.Pool
 }
