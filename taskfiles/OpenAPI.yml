@@ -1,0 +1,116 @@
+version: '3'
+
+vars:
+  OPENAPI_SPEC: '{{.OPENAPI_SPEC | default "openapi/openapi.yaml"}}'
+  OPENAPI_REDOCLY_CONFIG: '{{.OPENAPI_REDOCLY_CONFIG | default "openapi/redocly.yaml"}}'
+
+  # Keep tool versions pinned so local and CI validation use the same binaries.
+  OPENAPI_VALIDATOR_IMAGE: '{{.OPENAPI_VALIDATOR_IMAGE | default "openapitools/openapi-generator-cli:v7.10.0@sha256:f2054a5a7908ad81017d0f0839514ba5eab06ae628914ff71554d46fac1bcf7a"}}'
+  OPENAPI_REDOCLY_IMAGE: '{{.OPENAPI_REDOCLY_IMAGE | default "redocly/cli:1.25.6@sha256:044f1533eebf96840cbce4d56c5ba947bf7a00796124f5ccbd7da77754ed2917"}}'
+  OPENAPI_PREVIEW_HOST: '{{.OPENAPI_PREVIEW_HOST | default "127.0.0.1"}}'
+  OPENAPI_PREVIEW_PORT: '{{.OPENAPI_PREVIEW_PORT | default "8081"}}'
+
+tasks:
+  validate:
+    desc: OpenAPI 仕様を validator で検証する
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      OPENAPI_SPEC: '{{.OPENAPI_SPEC}}'
+      OPENAPI_REDOCLY_CONFIG: '{{.OPENAPI_REDOCLY_CONFIG}}'
+      OPENAPI_VALIDATOR_IMAGE: '{{.OPENAPI_VALIDATOR_IMAGE}}'
+    cmds:
+      - >-
+        docker run --rm
+        -v "${ROOT_DIR}:/workspace:ro"
+        "${OPENAPI_VALIDATOR_IMAGE}"
+        validate
+        -i "/workspace/${OPENAPI_SPEC}"
+
+  lint:
+    desc: OpenAPI 仕様を linter で検査する
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      OPENAPI_SPEC: '{{.OPENAPI_SPEC}}'
+      OPENAPI_REDOCLY_CONFIG: '{{.OPENAPI_REDOCLY_CONFIG}}'
+      OPENAPI_REDOCLY_IMAGE: '{{.OPENAPI_REDOCLY_IMAGE}}'
+    cmds:
+      - >-
+        docker run --rm
+        -v "${ROOT_DIR}:/workspace:ro"
+        "${OPENAPI_REDOCLY_IMAGE}"
+        lint
+        --config "/workspace/${OPENAPI_REDOCLY_CONFIG}"
+        "/workspace/${OPENAPI_SPEC}"
+
+  preview:
+    desc: OpenAPI 仕様をローカルでプレビューする
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      OPENAPI_SPEC: '{{.OPENAPI_SPEC}}'
+      OPENAPI_REDOCLY_CONFIG: '{{.OPENAPI_REDOCLY_CONFIG}}'
+      OPENAPI_REDOCLY_IMAGE: '{{.OPENAPI_REDOCLY_IMAGE}}'
+      OPENAPI_PREVIEW_HOST: '{{.OPENAPI_PREVIEW_HOST}}'
+      OPENAPI_PREVIEW_PORT: '{{.OPENAPI_PREVIEW_PORT}}'
+    cmds:
+      - |
+        set -eu
+
+        if ! awk -v port="$OPENAPI_PREVIEW_PORT" '
+          BEGIN {
+            if (port !~ /^[0-9]+$/ || port < 1 || port > 65535) {
+              exit 1
+            }
+          }
+        '; then
+          printf '%s\n' "OPENAPI_PREVIEW_PORT must be an integer between 1 and 65535" >&2
+          exit 2
+        fi
+
+        if ! awk -v host="$OPENAPI_PREVIEW_HOST" '
+          BEGIN {
+            if (split(host, octets, ".") != 4) {
+              exit 1
+            }
+            for (i = 1; i <= 4; i++) {
+              if (octets[i] !~ /^[0-9]+$/ || octets[i] < 0 || octets[i] > 255 ||
+                  (octets[i] != "0" && octets[i] ~ /^0/)) {
+                exit 1
+              }
+            }
+          }
+        '; then
+          printf '%s\n' "OPENAPI_PREVIEW_HOST must be an IPv4 bind address" >&2
+          exit 2
+        fi
+
+        case "$OPENAPI_SPEC" in
+          openapi/*) preview_spec="${OPENAPI_SPEC#openapi/}" ;;
+          *)
+            printf '%s\n' "OPENAPI_SPEC must be inside the openapi directory for preview" >&2
+            exit 2
+            ;;
+        esac
+        case "$OPENAPI_REDOCLY_CONFIG" in
+          openapi/*) preview_config="${OPENAPI_REDOCLY_CONFIG#openapi/}" ;;
+          *)
+            printf '%s\n' "OPENAPI_REDOCLY_CONFIG must be inside the openapi directory for preview" >&2
+            exit 2
+            ;;
+        esac
+        case "/$preview_spec/$preview_config/" in
+          */../*|*/./*|*//*)
+            printf '%s\n' "OpenAPI preview paths must be normalized relative paths" >&2
+            exit 2
+            ;;
+        esac
+
+        exec docker run --rm --init \
+          --publish "${OPENAPI_PREVIEW_HOST}:${OPENAPI_PREVIEW_PORT}:8080" \
+          --volume "${ROOT_DIR}/openapi:/workspace:ro" \
+          "${OPENAPI_REDOCLY_IMAGE}" \
+          preview-docs \
+          --host 0.0.0.0 \
+          --port 8080 \
+          --use-community-edition \
+          --config "/workspace/${preview_config}" \
+          "/workspace/${preview_spec}"

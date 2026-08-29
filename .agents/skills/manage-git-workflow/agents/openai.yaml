@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gitワークフロー管理"
+  short_description: "リポジトリのブランチ・コミット・PR規約を一貫して適用"
+  default_prompt: "$manage-git-workflow を使い、この変更に適したブランチ、コミット、Pull Requestを準備してください。"
