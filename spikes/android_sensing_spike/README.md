@@ -70,7 +70,7 @@ lib/
 | `flutter_background_geolocation` 5.5.0 | Maven Central 配信のため追加リポジトリ不要。**DEBUG ビルドはライセンス不要**で全機能が動く。リリースビルドには $399 のライセンスが要る |
 | `tracelet` 3.8.7 | Apache-2.0。単独開発者による新しいパッケージで実績は乏しい。まさにそこを実測で確かめるのが本スパイクの目的 |
 | `health` 13.3.2 | Android は Health Connect 経由。`MainActivity` が `FlutterFragmentActivity` を継承している必要がある |
-| `permission_handler` 12.0.3 | 13.x 系は `compileSdk 37` を要求するが、Android SDK 側には `android-37.0` しか存在せず Gradle が解決できない。`compileSdk 35` で収まる 12.x に固定している |
+| `permission_handler` 12.0.3 | 13.x 系は `compileSdk 37` を要求するが、Android SDK 側には `android-37.0` しか存在せず Gradle が解決できない。`compileSdk 35` を宣言する 12.x に固定している（本アプリのビルドは compileSdk 36） |
 
 `minSdk` は 26。`health` と `tracelet` がいずれも要求する。
 

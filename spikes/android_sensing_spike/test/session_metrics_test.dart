@@ -687,4 +687,94 @@ void main() {
       metrics.totalGapDuration,
     );
   });
+
+  // 欠損率(参考値)と、移動中の取りこぼしを取り違えないための回帰テスト。
+  // 報告書でこの2つを混同し、リスクを12ポイント過小に書いてしまった。
+  test('欠損率と移動中の取りこぼしは別物である', () {
+    // 10分のセッション。
+    //   0〜2分  : 静止したまま10秒間隔で取得できている
+    //   2〜7分  : 5分間サンプルが来ない。その間 600m 移動している
+    //   7〜10分 : 再び10秒間隔で取得できている
+    const jump = 600 / 111190.0; // 緯度1度 ≒ 111.19km
+    final samples = <LocationSample>[
+      for (var i = 0; i < 13; i++)
+        _sample(
+          seq: i + 1,
+          recordedAt: base.add(Duration(seconds: i * 10)),
+          latitude: 35.0,
+          longitude: 139.0,
+          accuracy: 8,
+        ),
+      for (var i = 0; i < 19; i++)
+        _sample(
+          seq: 100 + i,
+          recordedAt: base.add(Duration(minutes: 7, seconds: i * 10)),
+          latitude: 35.0 + jump,
+          longitude: 139.0,
+          accuracy: 8,
+        ),
+    ];
+
+    final metrics = SessionMetrics.compute(
+      samples,
+      sessionStart: base,
+      sessionEnd: base.add(const Duration(minutes: 10)),
+      motionChanges: [
+        MotionChangeRecord(at: base, isMoving: false),
+        MotionChangeRecord(
+          at: base.add(const Duration(minutes: 2)),
+          isMoving: true,
+        ),
+      ],
+    );
+
+    // 欠損は「2分〜7分」の1回だけ。歩行速度なので原因不明に分類される。
+    expect(metrics.gaps, hasLength(1));
+    expect(metrics.gaps.single.cause, GapCause.unexplained);
+    expect(metrics.stationaryDuration, const Duration(minutes: 2));
+
+    // 分母が違うので、2つの比率は必ず食い違う。
+    // 欠損率        = 5分 / 10分       = 50.0%
+    // 移動中の取りこぼし = 5分 / (10分-2分) = 62.5%
+    expect(metrics.gapRatio, closeTo(0.5, 0.01));
+    expect(metrics.unexplainedGapRatio, closeTo(0.625, 0.01));
+    expect(metrics.unexplainedGapRatio, greaterThan(metrics.gapRatio));
+
+    final report = metrics.toReportString();
+    expect(report, contains('欠損率(静止含む・参考値)'));
+    expect(report, contains('原因不明の欠損'));
+  });
+
+  test('欠損率は 100% を超えない', () {
+    // サンプルがセッション区間の外にあっても、欠損は区間内へ丸められる。
+    final metrics = SessionMetrics.compute(
+      [
+        _sample(
+          seq: 1,
+          recordedAt: base.subtract(const Duration(minutes: 2)),
+          latitude: 35.0,
+          longitude: 139.0,
+        ),
+        _sample(
+          seq: 2,
+          recordedAt: base.add(const Duration(minutes: 12)),
+          latitude: 35.02,
+          longitude: 139.0,
+        ),
+      ],
+      sessionStart: base,
+      sessionEnd: base.add(const Duration(minutes: 10)),
+    );
+
+    expect(metrics.gapRatio, lessThanOrEqualTo(1.0));
+    expect(metrics.unexplainedGapRatio, lessThanOrEqualTo(1.0));
+    expect(
+      metrics.totalGapDuration,
+      lessThanOrEqualTo(metrics.wallClockDuration),
+    );
+    for (final g in metrics.gaps) {
+      expect(g.from.isBefore(base), isFalse);
+      expect(g.to.isAfter(base.add(const Duration(minutes: 10))), isFalse);
+    }
+  });
 }

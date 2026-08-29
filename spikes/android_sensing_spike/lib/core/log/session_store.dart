@@ -181,9 +181,7 @@ class SessionStore {
   /// 本メソッドはその方針を保ったまま、ディレクトリ解決処理だけを
   /// 呼び出し側から関数として注入してもらう形にしている。
   ///
-  /// 現時点では `path_provider` が pubspec.yaml に追加されていないため、
-  /// 実際のアプリ (main.dart など、このエージェントの管轄外) から使う場合は、
-  /// まず `path_provider` を依存関係に追加したうえで、次のように呼び出すこと:
+  /// 実際のアプリからは次のように呼び出す:
   ///
   /// ```dart
   /// import 'package:path_provider/path_provider.dart';

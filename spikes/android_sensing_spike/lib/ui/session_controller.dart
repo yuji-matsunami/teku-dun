@@ -419,6 +419,13 @@ class SessionController extends ChangeNotifier with WidgetsBindingObserver {
     isRunning = false;
     _stopTicker();
 
+    // 計測中フラグを消す。消し忘れると、開始に失敗したセッションを
+    // 指したままヘッドレスタスクが記録を追記し続け、
+    // 一度も開始されなかったセッションのログが汚れる。
+    await _safely('計測中フラグのクリア', () async {
+      await _store?.writeActiveSessionId(null);
+    });
+
     final provider = _provider;
     if (provider != null) {
       try {

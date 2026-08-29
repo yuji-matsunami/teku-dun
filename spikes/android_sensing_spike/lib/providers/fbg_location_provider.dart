@@ -14,6 +14,18 @@ import 'compare_config.dart';
 /// 10〜15 分の歩行 1 回分には十分に足りる件数を上限とする。
 const int _pluginRecordFetchLimit = 5000;
 
+/// 「不明」を表すセンチネル値 (-1) を null に均す。
+///
+/// fbg は速度・方位・精度が不明なとき -1.0 を返す。そのまま記録すると
+/// 画面に `速度: -1.0 m/s` と出るうえ、速度の中央値などの集計にも
+/// 紛れ込む。実測データでは 8 セッションで speed に 76 件、
+/// heading に 84 件の -1 が含まれていた。
+double? _sanitize(double? value) {
+  if (value == null) return null;
+  if (value < 0) return null;
+  return value;
+}
+
 /// プラグインが返すタイムスタンプ (ISO-8601 文字列、または epoch ミリ秒) を
 /// UTC の [DateTime] に変換する。解釈できない場合は null。
 DateTime? _parsePluginTimestamp(Object? raw) {
@@ -268,10 +280,10 @@ class FbgLocationProvider implements LocationProvider {
       receivedAt: receivedAt,
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
-      accuracy: location.coords.accuracy,
+      accuracy: _sanitize(location.coords.accuracy),
       altitude: location.coords.altitude,
-      speed: location.coords.speed,
-      heading: location.coords.heading,
+      speed: _sanitize(location.coords.speed),
+      heading: _sanitize(location.coords.heading),
       isMoving: location.isMoving,
       activity: location.activity.type,
       activityConfidence: location.activity.confidence,

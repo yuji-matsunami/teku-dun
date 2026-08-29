@@ -28,6 +28,16 @@ import 'compare_config.dart';
 ///   fbg のような 0-100 の int ではない。
 /// * `Location.battery.level` は fbg と同じく `0.0`-`1.0` (不明時 `-1.0`)
 ///   であることをソースのドキュメントコメントで確認済み。
+/// 「不明」を表すセンチネル値 (負値) を null に均す。
+///
+/// fbg 実装と同じ規則を適用する。両プロバイダで扱いを揃えないと、
+/// 速度や精度の集計値が片方だけ 0 方向へ引っ張られ、比較が崩れる。
+double? _sanitize(double? value) {
+  if (value == null) return null;
+  if (value < 0) return null;
+  return value;
+}
+
 class TraceletLocationProvider implements LocationProvider {
   TraceletLocationProvider();
 
@@ -221,11 +231,11 @@ class TraceletLocationProvider implements LocationProvider {
       receivedAt: receivedAt,
       latitude: location.coords.latitude,
       longitude: location.coords.longitude,
-      accuracy: location.coords.accuracy,
+      accuracy: _sanitize(location.coords.accuracy),
       altitude: location.coords.altitude,
-      speed: location.coords.speed,
-      speedAccuracy: location.coords.speedAccuracy,
-      heading: location.coords.heading,
+      speed: _sanitize(location.coords.speed),
+      speedAccuracy: _sanitize(location.coords.speedAccuracy),
+      heading: _sanitize(location.coords.heading),
       isMoving: location.isMoving,
       activity: _activityTypeToString(location.activity.type),
       activityConfidence: _activityConfidenceToInt(location.activity.confidence),
@@ -337,12 +347,11 @@ class TraceletLocationProvider implements LocationProvider {
   ///
   /// __重要__: tracelet も Android では `AndroidConfig.foregroundService`
   /// による常駐通知付きフォアグラウンドサービスとして動作する。
+  /// __Dart 側のフラグで早期 return してはならない。__
+  ///
   /// `stop()` を呼び忘れるとサービスと常駐通知が動き続け、もう一方の
   /// プロバイダ (fbg) を起動した際にバッテリー消費が二重にかかり
-  /// 比較実験が成立しなくなる。そのため [stop] は必ず SDK の `stop()` を
-  /// 呼び、フォアグラウンドサービスと常駐通知を確実に停止させる。
-  @override
-  /// __Dart 側のフラグで早期 return してはならない。__
+  /// 比較実験が成立しなくなる。
   ///
   /// 本プロバイダは `stopOnTerminate: false` で動作するため、アプリが
   /// OS に終了させられてもネイティブのフォアグラウンドサービスは

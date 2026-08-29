@@ -280,6 +280,18 @@ class SessionMetrics {
     final sorted = List<LocationSample>.of(samples)
       ..sort((a, b) => a.recordedAt.compareTo(b.recordedAt));
 
+    // プラグインはセッション開始直前の最終既知位置を配信することがあり、
+    // その recordedAt はセッション開始より前になる (実測20セッション中8件、
+    // 最大28.8秒)。クランプしないと欠損時間がセッション区間の外まで
+    // 伸び、欠損率が 100% を超えうる。
+    DateTime clampToSession(DateTime t) {
+      if (t.isBefore(sessionStart)) return sessionStart;
+      if (sessionEnd.isAfter(sessionStart) && t.isAfter(sessionEnd)) {
+        return sessionEnd;
+      }
+      return t;
+    }
+
     final wallClockDuration = sessionEnd.isAfter(sessionStart)
         ? sessionEnd.difference(sessionStart)
         : Duration.zero;
@@ -297,13 +309,13 @@ class SessionMetrics {
     // provider.start() を呼ぶうえ、GPS のコールドスタートも加わるためである。
     if (sorted.isNotEmpty) {
       final headGap = _clampNonNegative(
-        sorted.first.recordedAt.difference(sessionStart),
+        clampToSession(sorted.first.recordedAt).difference(sessionStart),
       );
       if (headGap > gapThreshold) {
         gaps.add(
           Gap(
             from: sessionStart,
-            to: sorted.first.recordedAt,
+            to: clampToSession(sorted.first.recordedAt),
             duration: headGap,
             position: GapPosition.head,
           ),
@@ -314,7 +326,9 @@ class SessionMetrics {
     for (var i = 1; i < sorted.length; i++) {
       final prev = sorted[i - 1];
       final cur = sorted[i];
-      final rawDiff = cur.recordedAt.difference(prev.recordedAt);
+      final prevAt = clampToSession(prev.recordedAt);
+      final curAt = clampToSession(cur.recordedAt);
+      final rawDiff = curAt.difference(prevAt);
       // 入力が recordedAt でソートされていない・逆転している異常値も
       // 例外にせず 0 として扱う。
       final diff = rawDiff.isNegative ? Duration.zero : rawDiff;
@@ -331,8 +345,8 @@ class SessionMetrics {
         final seconds = diff.inMicroseconds / Duration.microsecondsPerSecond;
         gaps.add(
           Gap(
-            from: prev.recordedAt,
-            to: cur.recordedAt,
+            from: prevAt,
+            to: curAt,
             duration: diff,
             position: GapPosition.interior,
             displacementMeters: displacement,
@@ -366,12 +380,12 @@ class SessionMetrics {
     // 見分けのつかない結果になる。
     if (sorted.isNotEmpty) {
       final tailGap = _clampNonNegative(
-        sessionEnd.difference(sorted.last.recordedAt),
+        sessionEnd.difference(clampToSession(sorted.last.recordedAt)),
       );
       if (tailGap > gapThreshold) {
         gaps.add(
           Gap(
-            from: sorted.last.recordedAt,
+            from: clampToSession(sorted.last.recordedAt),
             to: sessionEnd,
             duration: tailGap,
             position: GapPosition.tail,
