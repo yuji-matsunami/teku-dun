@@ -1,0 +1,41 @@
+services:
+  db:
+    # 固定したPostGISイメージはamd64専用のため、Apple Siliconではエミュレーションを使用する。
+    platform: linux/amd64
+    image: postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5
+    environment:
+      # ローカル開発専用の既知の値であり、本番の資格情報には使用しない。
+      POSTGRES_DB: teku_dun
+      POSTGRES_USER: teku_dun
+      POSTGRES_PASSWORD: teku_dun
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # クリーンなボリュームの初期化中はソケット専用の一時サーバーが起動するため、
+      # TCPで確認し、マイグレーションが最終的なサーバーの起動を待つようにする。
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  migrate:
+    image: migrate/migrate:v4.18.3@sha256:39b59b389634e43bb3f2d4e94bc1edef0775ec2a9a3540ce6a2cf330e5daae55
+    profiles:
+      - tools
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/migrations:ro
+    environment:
+      # ローカル開発専用の固定資格情報でDBへ接続する。
+      DATABASE_URL: postgres://teku_dun:teku_dun@db:5432/teku_dun?sslmode=disable
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - migrate -path /migrations -database "$${DATABASE_URL}" $${MIGRATE_COMMAND:-up}
+
+volumes:
+  postgres_data:
