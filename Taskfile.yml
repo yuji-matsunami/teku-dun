@@ -5,6 +5,8 @@ includes:
     taskfile: taskfiles/OpenAPI.yml
   db:
     taskfile: taskfiles/Database.yml
+  api:
+    taskfile: taskfiles/API.yml
 
 tasks:
   default:

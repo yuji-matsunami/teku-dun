@@ -1,0 +1,9 @@
+package: openapi
+output: internal/openapi/openapi.gen.go
+generate:
+  models: true
+  chi-server: true
+  embedded-spec: true
+output-options:
+  # Keep all operation types and helpers in the committed generated contract.
+  skip-prune: true
