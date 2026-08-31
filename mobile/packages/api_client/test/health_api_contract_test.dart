@@ -49,6 +49,23 @@ void main() {
     expect(response.data?.status, HealthResponseStatusEnum.ok);
   });
 
+  test('readiness endpoint deserializes a 200 response', () async {
+    final adapter = RecordingAdapter(
+      statusCode: 200,
+      body: '{"status":"ready"}',
+    );
+    final dio = Dio(BaseOptions(baseUrl: 'https://api.example.test/'))
+      ..httpClientAdapter = adapter;
+    final api = TekuDunApiClient(dio: dio).getHealthApi();
+
+    final response = await api.getReadyz();
+
+    expect(adapter.lastRequest?.method, 'GET');
+    expect(adapter.lastRequest?.uri, Uri.parse('https://api.example.test/readyz'));
+    expect(response.statusCode, 200);
+    expect(response.data?.status, ReadyResponseStatusEnum.ready);
+  });
+
   test('readiness endpoint surfaces a 503 response as a DioException', () async {
     final adapter = RecordingAdapter(
       statusCode: 503,
