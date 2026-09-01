@@ -26,6 +26,8 @@ rewrite_file() {
 }
 
 append_pubspec_lock_exception() {
+  # 通常の Dart ライブラリとは異なり、このアプリ専用クライアントでは
+  # 開発環境と CI の依存関係を再現するため pubspec.lock を追跡する。
   awk '$0 != "!pubspec.lock" { print } END { print "!pubspec.lock" }'
 }
 
