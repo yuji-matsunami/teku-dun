@@ -71,22 +71,3 @@ remove_generated_test_exclude_and_ignore_unused_import() {
 
 rewrite_file "$gitignore_path" append_pubspec_lock_exception
 rewrite_file "$analysis_options_path" remove_generated_test_exclude_and_ignore_unused_import
-
-# Normalize template whitespace so repository-wide diff checks stay useful
-# without hand-editing generated Dart or Markdown files.
-while IFS= read -r -d '' generated_file; do
-  rewrite_file "$generated_file" awk '
-    {
-      sub(/[[:space:]]+$/, "")
-      lines[NR] = $0
-      if ($0 != "") {
-        last_nonempty = NR
-      }
-    }
-    END {
-      for (line = 1; line <= last_nonempty; line++) {
-        print lines[line]
-      }
-    }
-  '
-done < <(find "$package_dir" -path "$package_dir/.dart_tool" -prune -o -type f \( -name '*.dart' -o -name '*.md' \) -print0)
