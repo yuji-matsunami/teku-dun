@@ -1,19 +1,19 @@
 version: '3'
 
 vars:
-  DART_CLIENT_DIR: '{{.DART_CLIENT_DIR | default "mobile/packages/api_client"}}'
-  DART_CLIENT_SPEC: '{{.DART_CLIENT_SPEC | default "openapi/openapi.yaml"}}'
+  DART_CLIENT_DIR: 'mobile/packages/api_client'
+  DART_CLIENT_SPEC: 'openapi/openapi.yaml'
 
   # Keep both the generator and Dart SDK immutable so regeneration and checks
   # are reproducible across developer machines and CI.
-  DART_CLIENT_GENERATOR_IMAGE: '{{.DART_CLIENT_GENERATOR_IMAGE | default "openapitools/openapi-generator-cli:v7.10.0@sha256:f2054a5a7908ad81017d0f0839514ba5eab06ae628914ff71554d46fac1bcf7a"}}'
-  DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE | default "dart:3.7.0@sha256:9fb41fc1eefdf432694e17b0f80c9135b1f79dd3f645c403f98ed5ae71799c36"}}'
-  DART_CLIENT_GENERATOR_PROPERTIES: '{{.DART_CLIENT_GENERATOR_PROPERTIES | default "pubName=teku_dun_api_client,pubVersion=0.1.0"}}'
-  DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE | default "mobile/packages/api_client/.dart_tool/pub-cache"}}'
-  DART_CLIENT_POST_PROCESS: '{{.DART_CLIENT_POST_PROCESS | default "mobile/packages/api_client/tool/generator_post_process.sh"}}'
-  DART_CLIENT_UID: '{{.DART_CLIENT_UID | default ""}}'
-  DART_CLIENT_GID: '{{.DART_CLIENT_GID | default ""}}'
-  DART_MODE: '{{.DART_MODE | default "docker"}}'
+  DART_CLIENT_GENERATOR_IMAGE: 'openapitools/openapi-generator-cli:v7.10.0@sha256:f2054a5a7908ad81017d0f0839514ba5eab06ae628914ff71554d46fac1bcf7a'
+  DART_CLIENT_SDK_IMAGE: 'dart:3.7.0@sha256:9fb41fc1eefdf432694e17b0f80c9135b1f79dd3f645c403f98ed5ae71799c36'
+  DART_CLIENT_GENERATOR_PROPERTIES: 'pubName=teku_dun_api_client,pubVersion=0.1.0'
+  DART_CLIENT_PUB_CACHE: 'mobile/packages/api_client/.dart_tool/pub-cache'
+  DART_CLIENT_POST_PROCESS: 'mobile/packages/api_client/tool/generator_post_process.sh'
+  DART_CLIENT_UID: ''
+  DART_CLIENT_GID: ''
+  DART_MODE: 'docker'
 
 tasks:
   generate:
