@@ -1,0 +1,55 @@
+version: '3'
+
+vars:
+  FLUTTER_APP_DIR: '{{.FLUTTER_APP_DIR | default "mobile/app"}}'
+  # FLUTTER is intentionally a command string so developers can override it
+  # with a trusted local Flutter command, such as a pinned SDK path.
+  FLUTTER: '{{.FLUTTER | default "fvm flutter"}}'
+  API_BASE_URL: '{{.API_BASE_URL | default "http://10.0.2.2:8080"}}'
+
+tasks:
+  pub-get:
+    desc: Flutterアプリの依存関係を取得する
+    dir: '{{.ROOT_DIR}}/{{.FLUTTER_APP_DIR}}'
+    cmds:
+      - '{{.FLUTTER}} pub get'
+
+  analyze:
+    desc: Flutterアプリを静的解析する
+    cmds:
+      - task: pub-get
+      - task: analyze-only
+
+  analyze-only:
+    internal: true
+    dir: '{{.ROOT_DIR}}/{{.FLUTTER_APP_DIR}}'
+    cmds:
+      - '{{.FLUTTER}} analyze'
+
+  test:
+    desc: Flutterアプリのテストを実行する
+    cmds:
+      - task: pub-get
+      - task: test-only
+
+  test-only:
+    internal: true
+    dir: '{{.ROOT_DIR}}/{{.FLUTTER_APP_DIR}}'
+    cmds:
+      - '{{.FLUTTER}} test'
+
+  run:
+    desc: Flutterアプリを起動する（API_BASE_URLで接続先を変更可能）
+    dir: '{{.ROOT_DIR}}/{{.FLUTTER_APP_DIR}}'
+    env:
+      API_BASE_URL: '{{.API_BASE_URL}}'
+    cmds:
+      - task: pub-get
+      - '{{.FLUTTER}} run --dart-define=API_BASE_URL="$API_BASE_URL"'
+
+  verify:
+    desc: Flutterアプリの静的解析とテストをまとめて実行する
+    cmds:
+      - task: pub-get
+      - task: analyze-only
+      - task: test-only
