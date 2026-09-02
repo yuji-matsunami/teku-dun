@@ -1,0 +1,397 @@
+version: '3'
+
+vars:
+  DART_CLIENT_DIR: 'mobile/packages/api_client'
+  DART_CLIENT_SPEC: 'openapi/openapi.yaml'
+
+  # Keep both the generator and Dart SDK immutable so regeneration and checks
+  # are reproducible across developer machines and CI.
+  DART_CLIENT_GENERATOR_IMAGE: 'openapitools/openapi-generator-cli:v7.10.0@sha256:f2054a5a7908ad81017d0f0839514ba5eab06ae628914ff71554d46fac1bcf7a'
+  DART_CLIENT_SDK_IMAGE: 'dart:3.7.0@sha256:9fb41fc1eefdf432694e17b0f80c9135b1f79dd3f645c403f98ed5ae71799c36'
+  DART_CLIENT_GENERATOR_PROPERTIES: 'pubName=teku_dun_api_client,pubVersion=0.1.0'
+  DART_CLIENT_PUB_CACHE: 'mobile/packages/api_client/.dart_tool/pub-cache'
+  DART_CLIENT_POST_PROCESS: 'mobile/packages/api_client/tool/generator_post_process.sh'
+  DART_MODE: 'docker'
+
+tasks:
+  generate:
+    desc: OpenAPIからDart APIクライアントを生成する
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+      DART_CLIENT_SPEC: '{{.DART_CLIENT_SPEC}}'
+      DART_CLIENT_GENERATOR_IMAGE: '{{.DART_CLIENT_GENERATOR_IMAGE}}'
+      DART_CLIENT_GENERATOR_PROPERTIES: '{{.DART_CLIENT_GENERATOR_PROPERTIES}}'
+      DART_CLIENT_POST_PROCESS: '{{.DART_CLIENT_POST_PROCESS}}'
+    cmds:
+      - |
+        set -eu
+        repo_root="$ROOT_DIR"
+        client_dir="$repo_root/$DART_CLIENT_DIR"
+        spec_path="$repo_root/$DART_CLIENT_SPEC"
+        post_process="$repo_root/$DART_CLIENT_POST_PROCESS"
+        if [ ! -f "$spec_path" ]; then
+          echo "OpenAPI spec does not exist: $spec_path" >&2
+          exit 1
+        fi
+        mkdir -p "$client_dir"
+        rm -f "$client_dir/.openapi-generator-ignore"
+        docker run --rm \
+          --user "$(id -u):$(id -g)" \
+          -v "$spec_path:/local/openapi.yaml:ro" \
+          -v "$client_dir:/generated" \
+          "$DART_CLIENT_GENERATOR_IMAGE" generate \
+          --global-property apiTests=false,modelTests=false \
+          -i /local/openapi.yaml \
+          -g dart-dio \
+          -o /generated \
+          --additional-properties="$DART_CLIENT_GENERATOR_PROPERTIES"
+        bash "$post_process" "$client_dir"
+
+  generate-check:
+    desc: OpenAPIからのDart生成物にドリフトがないことを一時出力との差分で検査する
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+      DART_CLIENT_SPEC: '{{.DART_CLIENT_SPEC}}'
+      DART_CLIENT_GENERATOR_IMAGE: '{{.DART_CLIENT_GENERATOR_IMAGE}}'
+      DART_CLIENT_GENERATOR_PROPERTIES: '{{.DART_CLIENT_GENERATOR_PROPERTIES}}'
+      DART_CLIENT_POST_PROCESS: '{{.DART_CLIENT_POST_PROCESS}}'
+    cmds:
+      - |
+        set -eu
+        repo_root="$ROOT_DIR"
+        repo_root="$(cd "$repo_root" && pwd -P)"
+        client_dir="$repo_root/$DART_CLIENT_DIR"
+        spec_path="$repo_root/$DART_CLIENT_SPEC"
+        post_process="$repo_root/$DART_CLIENT_POST_PROCESS"
+        if [ ! -f "$spec_path" ]; then
+          echo "OpenAPI spec does not exist: $spec_path" >&2
+          exit 1
+        fi
+        tmp_dir=''
+        cleanup() {
+          exit_code=$?
+          cleanup_failed=0
+          trap - EXIT
+          if [ -n "$tmp_dir" ]; then
+            tmp_parent="${tmp_dir%/*}"
+            tmp_basename="${tmp_dir##*/}"
+            if [ "$tmp_parent" != "$tmp_root" ]; then
+              echo "refusing to remove unexpected temporary directory: $tmp_dir" >&2
+              cleanup_failed=1
+            else
+              case "$tmp_basename" in
+                teku-dun-dart-generate-check.*)
+                  if [ -d "$tmp_dir" ]; then
+                    if ! rm -rf -- "$tmp_dir"; then
+                      echo "failed to remove temporary directory: $tmp_dir" >&2
+                      cleanup_failed=1
+                    fi
+                  fi
+                  ;;
+                *)
+                  echo "refusing to remove unexpected temporary directory: $tmp_dir" >&2
+                  cleanup_failed=1
+                  ;;
+              esac
+            fi
+          fi
+          if [ "$cleanup_failed" -ne 0 ] && [ "$exit_code" -eq 0 ]; then
+            exit_code=1
+          fi
+          exit "$exit_code"
+        }
+        trap cleanup EXIT
+        tmp_root="${TMPDIR:-/tmp}"
+        if [ ! -d "$tmp_root" ]; then
+          echo "temporary directory does not exist: $tmp_root" >&2
+          exit 1
+        fi
+        tmp_root="$(cd "$tmp_root" && pwd -P)"
+        case "$tmp_root" in
+          "$repo_root"|"$repo_root"/*)
+            echo 'refusing to create a temporary directory in the repository' >&2
+            exit 1
+            ;;
+        esac
+        tmp_dir="$(mktemp -d "$tmp_root/teku-dun-dart-generate-check.XXXXXX")"
+        tmp_dir="$(cd "$tmp_dir" && pwd -P)"
+        case "$tmp_dir" in
+          "$repo_root"|"$repo_root"/*)
+            echo 'refusing to generate into the repository' >&2
+            exit 1
+            ;;
+        esac
+        docker run --rm \
+          --user "$(id -u):$(id -g)" \
+          -v "$spec_path:/local/openapi.yaml:ro" \
+          -v "$tmp_dir:/generated" \
+          "$DART_CLIENT_GENERATOR_IMAGE" generate \
+          --global-property apiTests=false,modelTests=false \
+          -i /local/openapi.yaml \
+          -g dart-dio \
+          -o /generated \
+          --additional-properties="$DART_CLIENT_GENERATOR_PROPERTIES"
+        bash "$post_process" "$tmp_dir"
+        diff -ruN \
+          -x '.dart_tool' \
+          -x 'pubspec.lock' \
+          -x '*.g.dart' \
+          -x 'test' \
+          -x 'tool' \
+          "$client_dir" "$tmp_dir"
+
+  lock-update:
+    desc: Dart APIクライアントのpubspec.lockを更新する（依存関係変更時のみ実行）
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+      DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
+      DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
+      DART_MODE: '{{.DART_MODE}}'
+    cmds:
+      - |
+        set -eu
+        repo_root="$ROOT_DIR"
+        client_dir="$repo_root/$DART_CLIENT_DIR"
+        pub_cache="$DART_CLIENT_PUB_CACHE"
+        case "$pub_cache" in
+          /*) ;;
+          *) pub_cache="$repo_root/$pub_cache" ;;
+        esac
+        mkdir -p "$pub_cache"
+        if [ "$DART_MODE" = docker ]; then
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$client_dir:/workspace" \
+            -v "$pub_cache:/pub-cache" \
+            -e PUB_CACHE=/pub-cache \
+            -e HOME=/workspace/.dart_tool/home \
+            -w /workspace \
+            "$DART_CLIENT_SDK_IMAGE" dart pub get
+        else
+          (cd "$client_dir" && PUB_CACHE="$pub_cache" dart pub get)
+        fi
+
+  pub-get:
+    desc: Dart APIクライアントのロック済み依存関係を取得する
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+      DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
+      DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
+      DART_MODE: '{{.DART_MODE}}'
+    cmds:
+      - |
+        set -eu
+        repo_root="$ROOT_DIR"
+        client_dir="$repo_root/$DART_CLIENT_DIR"
+        pub_cache="$DART_CLIENT_PUB_CACHE"
+        case "$pub_cache" in
+          /*) ;;
+          *) pub_cache="$repo_root/$pub_cache" ;;
+        esac
+        mkdir -p "$pub_cache"
+        if [ "$DART_MODE" = docker ]; then
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$client_dir:/workspace" \
+            -v "$pub_cache:/pub-cache" \
+            -e PUB_CACHE=/pub-cache \
+            -e HOME=/workspace/.dart_tool/home \
+            -w /workspace \
+            "$DART_CLIENT_SDK_IMAGE" dart pub get --enforce-lockfile
+        else
+          (cd "$client_dir" && PUB_CACHE="$pub_cache" dart pub get --enforce-lockfile)
+        fi
+
+  build:
+    desc: Dart APIクライアントのbuilt_value生成コードを生成する
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    cmds:
+      - task: pub-get
+      - task: build-runner
+
+  build-check:
+    desc: trackedなDart生成コードのドリフトと未追跡生成物を検査する
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    cmds:
+      - task: build
+      - task: build-check-only
+
+  analyze:
+    desc: Dart APIクライアントを静的解析する
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    cmds:
+      - task: build
+      - task: analyze-only
+
+  test:
+    desc: Dart APIクライアントのテストを実行する
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    cmds:
+      - task: build
+      - task: test-only
+
+  verify:
+    desc: Dart APIクライアントの生成物・静的解析・テストをまとめて実行する
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    cmds:
+      - task: generate-check
+      - task: pub-get
+      - task: build-runner
+      - task: build-check-only
+      - task: analyze-only
+      - task: test-only
+
+  build-runner:
+    internal: true
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+      DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
+      DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
+      DART_MODE: '{{.DART_MODE}}'
+    cmds:
+      - |
+        set -eu
+        repo_root="$ROOT_DIR"
+        client_dir="$repo_root/$DART_CLIENT_DIR"
+        pub_cache="$DART_CLIENT_PUB_CACHE"
+        case "$pub_cache" in
+          /*) ;;
+          *) pub_cache="$repo_root/$pub_cache" ;;
+        esac
+        if [ "$DART_MODE" = docker ]; then
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$client_dir:/workspace" \
+            -v "$pub_cache:/pub-cache" \
+            -e PUB_CACHE=/pub-cache \
+            -e HOME=/workspace/.dart_tool/home \
+            -w /workspace \
+            "$DART_CLIENT_SDK_IMAGE" dart run build_runner build
+        else
+          (cd "$client_dir" && PUB_CACHE="$pub_cache" dart run build_runner build)
+        fi
+
+  build-check-only:
+    internal: true
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+    cmds:
+      - |
+        set -eu
+        repo_root="$ROOT_DIR"
+        client_dir="$repo_root/$DART_CLIENT_DIR"
+        changed="$(git -C "$client_dir" diff --name-only -- '*.g.dart')"
+        if [ -n "$changed" ]; then
+          echo 'Generated Dart files changed after build_runner:' >&2
+          echo "$changed" >&2
+          exit 1
+        fi
+        untracked="$(git -C "$client_dir" ls-files --others --exclude-standard -- '*.g.dart')"
+        if [ -n "$untracked" ]; then
+          echo 'Generated Dart files are untracked; stage the build_runner output:' >&2
+          echo "$untracked" >&2
+          exit 1
+        fi
+
+  analyze-only:
+    internal: true
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+      DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
+      DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
+      DART_MODE: '{{.DART_MODE}}'
+    cmds:
+      - |
+        set -eu
+        repo_root="$ROOT_DIR"
+        client_dir="$repo_root/$DART_CLIENT_DIR"
+        pub_cache="$DART_CLIENT_PUB_CACHE"
+        case "$pub_cache" in
+          /*) ;;
+          *) pub_cache="$repo_root/$pub_cache" ;;
+        esac
+        if [ "$DART_MODE" = docker ]; then
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$client_dir:/workspace" \
+            -v "$pub_cache:/pub-cache" \
+            -e PUB_CACHE=/pub-cache \
+            -e HOME=/workspace/.dart_tool/home \
+            -w /workspace \
+            "$DART_CLIENT_SDK_IMAGE" dart analyze
+        else
+          (cd "$client_dir" && PUB_CACHE="$pub_cache" dart analyze)
+        fi
+
+  test-only:
+    internal: true
+    requires:
+      vars:
+        - name: DART_MODE
+          enum: [docker, host]
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+      DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
+      DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
+      DART_MODE: '{{.DART_MODE}}'
+    cmds:
+      - |
+        set -eu
+        repo_root="$ROOT_DIR"
+        client_dir="$repo_root/$DART_CLIENT_DIR"
+        pub_cache="$DART_CLIENT_PUB_CACHE"
+        case "$pub_cache" in
+          /*) ;;
+          *) pub_cache="$repo_root/$pub_cache" ;;
+        esac
+        if [ "$DART_MODE" = docker ]; then
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -v "$client_dir:/workspace" \
+            -v "$pub_cache:/pub-cache" \
+            -e PUB_CACHE=/pub-cache \
+            -e HOME=/workspace/.dart_tool/home \
+            -w /workspace \
+            "$DART_CLIENT_SDK_IMAGE" dart test
+        else
+          (cd "$client_dir" && PUB_CACHE="$pub_cache" dart test)
+        fi
