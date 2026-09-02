@@ -11,8 +11,6 @@ vars:
   DART_CLIENT_GENERATOR_PROPERTIES: 'pubName=teku_dun_api_client,pubVersion=0.1.0'
   DART_CLIENT_PUB_CACHE: 'mobile/packages/api_client/.dart_tool/pub-cache'
   DART_CLIENT_POST_PROCESS: 'mobile/packages/api_client/tool/generator_post_process.sh'
-  DART_CLIENT_UID: ''
-  DART_CLIENT_GID: ''
   DART_MODE: 'docker'
 
 tasks:
@@ -25,8 +23,6 @@ tasks:
       DART_CLIENT_GENERATOR_IMAGE: '{{.DART_CLIENT_GENERATOR_IMAGE}}'
       DART_CLIENT_GENERATOR_PROPERTIES: '{{.DART_CLIENT_GENERATOR_PROPERTIES}}'
       DART_CLIENT_POST_PROCESS: '{{.DART_CLIENT_POST_PROCESS}}'
-      DART_CLIENT_UID: '{{.DART_CLIENT_UID}}'
-      DART_CLIENT_GID: '{{.DART_CLIENT_GID}}'
     cmds:
       - |
         set -eu
@@ -34,10 +30,6 @@ tasks:
         client_dir="$repo_root/$DART_CLIENT_DIR"
         spec_path="$repo_root/$DART_CLIENT_SPEC"
         post_process="$repo_root/$DART_CLIENT_POST_PROCESS"
-        uid="$DART_CLIENT_UID"
-        gid="$DART_CLIENT_GID"
-        if [ -z "$uid" ]; then uid="$(id -u)"; fi
-        if [ -z "$gid" ]; then gid="$(id -g)"; fi
         if [ ! -f "$spec_path" ]; then
           echo "OpenAPI spec does not exist: $spec_path" >&2
           exit 1
@@ -45,7 +37,7 @@ tasks:
         mkdir -p "$client_dir"
         rm -f "$client_dir/.openapi-generator-ignore"
         docker run --rm \
-          --user "$uid:$gid" \
+          --user "$(id -u):$(id -g)" \
           -v "$spec_path:/local/openapi.yaml:ro" \
           -v "$client_dir:/generated" \
           "$DART_CLIENT_GENERATOR_IMAGE" generate \
@@ -65,8 +57,6 @@ tasks:
       DART_CLIENT_GENERATOR_IMAGE: '{{.DART_CLIENT_GENERATOR_IMAGE}}'
       DART_CLIENT_GENERATOR_PROPERTIES: '{{.DART_CLIENT_GENERATOR_PROPERTIES}}'
       DART_CLIENT_POST_PROCESS: '{{.DART_CLIENT_POST_PROCESS}}'
-      DART_CLIENT_UID: '{{.DART_CLIENT_UID}}'
-      DART_CLIENT_GID: '{{.DART_CLIENT_GID}}'
     cmds:
       - |
         set -eu
@@ -75,10 +65,6 @@ tasks:
         client_dir="$repo_root/$DART_CLIENT_DIR"
         spec_path="$repo_root/$DART_CLIENT_SPEC"
         post_process="$repo_root/$DART_CLIENT_POST_PROCESS"
-        uid="$DART_CLIENT_UID"
-        gid="$DART_CLIENT_GID"
-        if [ -z "$uid" ]; then uid="$(id -u)"; fi
-        if [ -z "$gid" ]; then gid="$(id -g)"; fi
         if [ ! -f "$spec_path" ]; then
           echo "OpenAPI spec does not exist: $spec_path" >&2
           exit 1
@@ -138,7 +124,7 @@ tasks:
             ;;
         esac
         docker run --rm \
-          --user "$uid:$gid" \
+          --user "$(id -u):$(id -g)" \
           -v "$spec_path:/local/openapi.yaml:ro" \
           -v "$tmp_dir:/generated" \
           "$DART_CLIENT_GENERATOR_IMAGE" generate \
@@ -167,8 +153,6 @@ tasks:
       DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
       DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
       DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
-      DART_CLIENT_UID: '{{.DART_CLIENT_UID}}'
-      DART_CLIENT_GID: '{{.DART_CLIENT_GID}}'
       DART_MODE: '{{.DART_MODE}}'
     cmds:
       - |
@@ -176,10 +160,6 @@ tasks:
         repo_root="$ROOT_DIR"
         client_dir="$repo_root/$DART_CLIENT_DIR"
         pub_cache="$DART_CLIENT_PUB_CACHE"
-        uid="$DART_CLIENT_UID"
-        gid="$DART_CLIENT_GID"
-        if [ -z "$uid" ]; then uid="$(id -u)"; fi
-        if [ -z "$gid" ]; then gid="$(id -g)"; fi
         case "$pub_cache" in
           /*) ;;
           *) pub_cache="$repo_root/$pub_cache" ;;
@@ -187,7 +167,7 @@ tasks:
         mkdir -p "$pub_cache"
         if [ "$DART_MODE" = docker ]; then
           docker run --rm \
-            --user "$uid:$gid" \
+            --user "$(id -u):$(id -g)" \
             -v "$client_dir:/workspace" \
             -v "$pub_cache:/pub-cache" \
             -e PUB_CACHE=/pub-cache \
@@ -209,8 +189,6 @@ tasks:
       DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
       DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
       DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
-      DART_CLIENT_UID: '{{.DART_CLIENT_UID}}'
-      DART_CLIENT_GID: '{{.DART_CLIENT_GID}}'
       DART_MODE: '{{.DART_MODE}}'
     cmds:
       - |
@@ -218,10 +196,6 @@ tasks:
         repo_root="$ROOT_DIR"
         client_dir="$repo_root/$DART_CLIENT_DIR"
         pub_cache="$DART_CLIENT_PUB_CACHE"
-        uid="$DART_CLIENT_UID"
-        gid="$DART_CLIENT_GID"
-        if [ -z "$uid" ]; then uid="$(id -u)"; fi
-        if [ -z "$gid" ]; then gid="$(id -g)"; fi
         case "$pub_cache" in
           /*) ;;
           *) pub_cache="$repo_root/$pub_cache" ;;
@@ -229,7 +203,7 @@ tasks:
         mkdir -p "$pub_cache"
         if [ "$DART_MODE" = docker ]; then
           docker run --rm \
-            --user "$uid:$gid" \
+            --user "$(id -u):$(id -g)" \
             -v "$client_dir:/workspace" \
             -v "$pub_cache:/pub-cache" \
             -e PUB_CACHE=/pub-cache \
@@ -305,8 +279,6 @@ tasks:
       DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
       DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
       DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
-      DART_CLIENT_UID: '{{.DART_CLIENT_UID}}'
-      DART_CLIENT_GID: '{{.DART_CLIENT_GID}}'
       DART_MODE: '{{.DART_MODE}}'
     cmds:
       - |
@@ -314,17 +286,13 @@ tasks:
         repo_root="$ROOT_DIR"
         client_dir="$repo_root/$DART_CLIENT_DIR"
         pub_cache="$DART_CLIENT_PUB_CACHE"
-        uid="$DART_CLIENT_UID"
-        gid="$DART_CLIENT_GID"
-        if [ -z "$uid" ]; then uid="$(id -u)"; fi
-        if [ -z "$gid" ]; then gid="$(id -g)"; fi
         case "$pub_cache" in
           /*) ;;
           *) pub_cache="$repo_root/$pub_cache" ;;
         esac
         if [ "$DART_MODE" = docker ]; then
           docker run --rm \
-            --user "$uid:$gid" \
+            --user "$(id -u):$(id -g)" \
             -v "$client_dir:/workspace" \
             -v "$pub_cache:/pub-cache" \
             -e PUB_CACHE=/pub-cache \
@@ -369,8 +337,6 @@ tasks:
       DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
       DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
       DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
-      DART_CLIENT_UID: '{{.DART_CLIENT_UID}}'
-      DART_CLIENT_GID: '{{.DART_CLIENT_GID}}'
       DART_MODE: '{{.DART_MODE}}'
     cmds:
       - |
@@ -378,17 +344,13 @@ tasks:
         repo_root="$ROOT_DIR"
         client_dir="$repo_root/$DART_CLIENT_DIR"
         pub_cache="$DART_CLIENT_PUB_CACHE"
-        uid="$DART_CLIENT_UID"
-        gid="$DART_CLIENT_GID"
-        if [ -z "$uid" ]; then uid="$(id -u)"; fi
-        if [ -z "$gid" ]; then gid="$(id -g)"; fi
         case "$pub_cache" in
           /*) ;;
           *) pub_cache="$repo_root/$pub_cache" ;;
         esac
         if [ "$DART_MODE" = docker ]; then
           docker run --rm \
-            --user "$uid:$gid" \
+            --user "$(id -u):$(id -g)" \
             -v "$client_dir:/workspace" \
             -v "$pub_cache:/pub-cache" \
             -e PUB_CACHE=/pub-cache \
@@ -410,8 +372,6 @@ tasks:
       DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
       DART_CLIENT_PUB_CACHE: '{{.DART_CLIENT_PUB_CACHE}}'
       DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
-      DART_CLIENT_UID: '{{.DART_CLIENT_UID}}'
-      DART_CLIENT_GID: '{{.DART_CLIENT_GID}}'
       DART_MODE: '{{.DART_MODE}}'
     cmds:
       - |
@@ -419,17 +379,13 @@ tasks:
         repo_root="$ROOT_DIR"
         client_dir="$repo_root/$DART_CLIENT_DIR"
         pub_cache="$DART_CLIENT_PUB_CACHE"
-        uid="$DART_CLIENT_UID"
-        gid="$DART_CLIENT_GID"
-        if [ -z "$uid" ]; then uid="$(id -u)"; fi
-        if [ -z "$gid" ]; then gid="$(id -g)"; fi
         case "$pub_cache" in
           /*) ;;
           *) pub_cache="$repo_root/$pub_cache" ;;
         esac
         if [ "$DART_MODE" = docker ]; then
           docker run --rm \
-            --user "$uid:$gid" \
+            --user "$(id -u):$(id -g)" \
             -v "$client_dir:/workspace" \
             -v "$pub_cache:/pub-cache" \
             -e PUB_CACHE=/pub-cache \
