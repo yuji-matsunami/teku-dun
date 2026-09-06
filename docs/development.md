@@ -85,10 +85,6 @@ SDK Platform-Tools、Android Emulatorをインストールしてください。`
    task dart:pub-get
    ```
 
-   Dart APIクライアントの検証は、デフォルトでは固定Dartコンテナ（`DART_MODE=docker`）
-   で実行します。Dart SDKをホストにインストール済みで、ホストのDartを使いたい場合だけ
-   `DART_MODE=host`を指定します（例: `task dart:verify DART_MODE=host`）。
-
 3. PostGISを起動し、マイグレーションを適用します。
 
    ```sh
@@ -365,7 +361,7 @@ OpenAPIの変更後にGo/Dart生成を更新していない、または generato
 - [ ] `task db:verify`がPostGISのバージョンを表示した。
 - [ ] `task openapi:validate`と`task openapi:lint`が成功した。
 - [ ] `task api:verify`が成功し、Go生成物にドリフトがない。
-- [ ] `task dart:verify`が成功し、Dart生成物にドリフトがない（必要なら`DART_MODE=host`を使用）。
+- [ ] `task dart:verify`が成功し、Dart生成物にドリフトがない。
 - [ ] `task flutter:verify`が成功した。
 - [ ] `task verify`が成功した（Android端末不要）。
 - [ ] `task smoke`が`{"status":"ok"}`と`{"status":"ready"}`を確認し、APIを停止した。開始時にDBが停止していた場合はDBも停止し、開始前からrunningだったDBは保持された。
