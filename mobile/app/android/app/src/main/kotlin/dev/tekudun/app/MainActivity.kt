@@ -1,4 +1,4 @@
-package com.yujimatsunami.teku_dun
+package dev.tekudun.app
 
 import io.flutter.embedding.android.FlutterActivity
 
