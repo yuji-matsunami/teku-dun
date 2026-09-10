@@ -3,14 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teku_dun/src/config/app_config.dart';
 
 void main() {
-  test('requires an API URL', () {
+  test('APIのURL指定を必須とする', () {
     expect(
       AppConfig.fromEnvironment,
       throwsA(isA<AppConfigurationException>()),
     );
   });
 
-  test('accepts an explicit HTTPS API URL and normalizes a trailing slash', () {
+  test('HTTPSのAPI URLを受け入れて末尾のスラッシュを除去する', () {
     expect(
       AppConfig.fromEnvironment(value: ' https://api.example.test/ ')
           .apiBaseUrl,
@@ -18,7 +18,7 @@ void main() {
     );
   });
 
-  test('rejects URLs that could carry credentials or request data', () {
+  test('認証情報やリクエストデータを含む可能性があるURLを拒否する', () {
     expect(
       () => AppConfig.fromBaseUrl('https://user:password@example.test'),
       throwsA(isA<AppConfigurationException>()),

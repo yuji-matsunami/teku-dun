@@ -26,7 +26,7 @@ HealthResponse _okResponse() {
 }
 
 void main() {
-  test('maps a successful generated response to a healthy result', () async {
+  test('生成クライアントの正常レスポンスを正常なヘルスチェック結果に変換する', () async {
     final gateway = ApiHealthGateway(_FakeHealthClient(_okResponse()));
 
     final result = await gateway.check();
@@ -34,7 +34,7 @@ void main() {
     expect(result.status, HealthStatus.healthy);
   });
 
-  test('rejects an empty generated response without exposing details', () {
+  test('生成クライアントの空レスポンスを詳細を公開せずに拒否する', () {
     final gateway = ApiHealthGateway(_FakeHealthClient(null));
 
     expect(
@@ -42,7 +42,7 @@ void main() {
       throwsA(
         isA<HealthGatewayException>().having(
           (error) => error.toString(),
-          'safe message',
+          '安全なメッセージ',
           'The health check failed.',
         ),
       ),
@@ -50,7 +50,7 @@ void main() {
   });
 
   test(
-    'converts transport and serialization failures to a safe exception',
+    '通信とデシリアライズの失敗を安全な例外に変換する',
     () async {
       for (final error in [
         StateError('private transport details'),
@@ -63,7 +63,7 @@ void main() {
           throwsA(
             isA<HealthGatewayException>().having(
               (error) => error.toString(),
-              'safe message',
+              '安全なメッセージ',
               'The health check failed.',
             ),
           ),
