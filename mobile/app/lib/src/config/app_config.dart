@@ -1,5 +1,3 @@
-const defaultApiBaseUrl = 'http://10.0.2.2:8080';
-
 /// A configuration error that is safe to show to an end user.
 class AppConfigurationException implements Exception {
   const AppConfigurationException();
@@ -14,10 +12,7 @@ class AppConfig {
   factory AppConfig.fromEnvironment({String? value}) {
     final baseUrl =
         value ??
-        const String.fromEnvironment(
-          'API_BASE_URL',
-          defaultValue: defaultApiBaseUrl,
-        );
+        const String.fromEnvironment('API_BASE_URL');
     return AppConfig.fromBaseUrl(baseUrl);
   }
 
