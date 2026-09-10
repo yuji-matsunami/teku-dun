@@ -3,8 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teku_dun/src/config/app_config.dart';
 
 void main() {
-  test('uses the Android emulator API URL by default', () {
-    expect(AppConfig.fromEnvironment().apiBaseUrl, 'http://10.0.2.2:8080');
+  test('requires an API URL', () {
+    expect(
+      AppConfig.fromEnvironment,
+      throwsA(isA<AppConfigurationException>()),
+    );
   });
 
   test('accepts an explicit HTTPS API URL and normalizes a trailing slash', () {
