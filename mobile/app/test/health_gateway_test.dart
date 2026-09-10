@@ -42,7 +42,7 @@ void main() {
       throwsA(
         isA<HealthGatewayException>().having(
           (error) => error.toString(),
-          '安全なメッセージ',
+          'ユーザー向けエラーメッセージ',
           'The health check failed.',
         ),
       ),
@@ -63,7 +63,7 @@ void main() {
           throwsA(
             isA<HealthGatewayException>().having(
               (error) => error.toString(),
-              '安全なメッセージ',
+              'ユーザー向けエラーメッセージ',
               'The health check failed.',
             ),
           ),
