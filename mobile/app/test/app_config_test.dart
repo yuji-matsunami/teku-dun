@@ -12,8 +12,7 @@ void main() {
 
   test('HTTPSのAPI URLを受け入れて末尾のスラッシュを除去する', () {
     expect(
-      AppConfig.fromEnvironment(value: ' https://api.example.test/ ')
-          .apiBaseUrl,
+      AppConfig.fromBaseUrl(' https://api.example.test/ ').apiBaseUrl,
       'https://api.example.test',
     );
   });

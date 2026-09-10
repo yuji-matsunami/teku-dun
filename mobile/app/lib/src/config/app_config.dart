@@ -9,10 +9,8 @@ class AppConfigurationException implements Exception {
 class AppConfig {
   const AppConfig._({required this.apiBaseUrl});
 
-  factory AppConfig.fromEnvironment({String? value}) {
-    final baseUrl =
-        value ??
-        const String.fromEnvironment('API_BASE_URL');
+  factory AppConfig.fromEnvironment() {
+    const baseUrl = String.fromEnvironment('API_BASE_URL');
     return AppConfig.fromBaseUrl(baseUrl);
   }
 
