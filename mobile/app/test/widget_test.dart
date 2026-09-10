@@ -46,7 +46,7 @@ void main() {
     expect(find.text('The health check returned OK.'), findsOneWidget);
   });
 
-  testWidgets('安全なエラーを表示してGateway経由で再試行する', (
+  testWidgets('ヘルスチェック失敗時に内部エラーを表示せず再試行できる', (
     tester,
   ) async {
     final gateway = _FakeHealthGateway([
