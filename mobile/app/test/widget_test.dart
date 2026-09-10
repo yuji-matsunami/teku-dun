@@ -30,7 +30,7 @@ Widget _testApp(HealthGateway gateway) {
 }
 
 void main() {
-  testWidgets('shows loading and then success when the health check passes', (
+  testWidgets('ヘルスチェック成功時に読み込み中から成功表示へ切り替わる', (
     tester,
   ) async {
     final response = Completer<HealthCheck>();
@@ -46,7 +46,7 @@ void main() {
     expect(find.text('The health check returned OK.'), findsOneWidget);
   });
 
-  testWidgets('shows a safe error and retries through the gateway', (
+  testWidgets('安全なエラーを表示してGateway経由で再試行する', (
     tester,
   ) async {
     final gateway = _FakeHealthGateway([
