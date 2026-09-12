@@ -11,6 +11,9 @@ includes:
     taskfile: taskfiles/Dart.yml
   flutter:
     taskfile: taskfiles/Flutter.yml
+  verify:
+    taskfile: taskfiles/Verify.yml
+    flatten: true
 
 tasks:
   default:
