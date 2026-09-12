@@ -50,9 +50,10 @@ SDK Platform-Tools、Android Emulatorをインストールしてください。`
 がAndroid toolchainの不足を示す場合は、Android Studioで不足項目を解消してから
 再実行します。
 
-> **このIssueでの未検証事項**: この作業環境ではAndroid SDKがないため、
-> `flutter build apk`（APKビルド）は実行していません。APKビルドをIssue #4の
-> 検証済み項目とは扱わず、Android SDKを用意した環境で別途確認してください。
+> **Issue #4での検証実績**: Flutter 3.47.0とAndroid SDKを使用して
+> `fvm flutter build apk --debug`が成功し、`app-debug.apk`の生成を確認しています。
+> Android 16（API 36）ARM64のPixel 10 Emulatorでもアプリを起動し、Go APIとの
+> 疎通、エラー表示、API復旧後の再試行を確認しています。
 
 ## クリーンなcloneからのセットアップ
 
@@ -138,8 +139,8 @@ task flutter:run API_BASE_URL=http://10.0.2.2:8080
 
 Androidエミュレータの`10.0.2.2`は、開発Macのloopback（`127.0.0.1`）を指す特別な
 アドレスです。Androidアプリの`localhost`または`127.0.0.1`はMacではなく、
-エミュレータ自身を指すため使用しません。`API_BASE_URL`を省略した場合も、
-Flutterアプリのデフォルトは`http://10.0.2.2:8080`です。
+エミュレータ自身を指すため使用しません。`task flutter:run`で`API_BASE_URL`を
+省略した場合は、Taskfileがローカル開発用の`http://10.0.2.2:8080`を渡します。
 
 アプリに次の表示が出れば、Flutterから`/healthz`への疎通に成功しています。
 
@@ -375,4 +376,4 @@ OpenAPIの変更後にGo/Dart生成を更新していない、または generato
 - [ ] Mac上の`curl`でDB起動中の`/readyz`が200、`{"status":"ready"}`になることを確認した。
 - [ ] （任意）実機でMacのLAN IPを`API_BASE_URL`に指定し、同じLANとファイアウォール設定で疎通した。
 - [ ] 確認後にFlutter、Go API、DBを停止した。
-- [ ] `flutter build apk`はAndroid SDKがないため未検証であることを記録した（この環境の既知の制約）。
+- [ ] `fvm flutter build apk --debug`が成功し、`build/app/outputs/flutter-apk/app-debug.apk`が生成された。
