@@ -12,7 +12,7 @@ part 'health_response.g.dart';
 /// Successful liveness check response.
 ///
 /// Properties:
-/// * [status]
+/// * [status] 
 @BuiltValue()
 abstract class HealthResponse implements Built<HealthResponse, HealthResponseBuilder> {
   @BuiltValueField(wireName: r'status')
@@ -118,3 +118,4 @@ class HealthResponseStatusEnum extends EnumClass {
   static BuiltSet<HealthResponseStatusEnum> get values => _$healthResponseStatusEnumValues;
   static HealthResponseStatusEnum valueOf(String name) => _$healthResponseStatusEnumValueOf(name);
 }
+

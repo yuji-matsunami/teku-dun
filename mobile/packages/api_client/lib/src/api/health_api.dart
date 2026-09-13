@@ -33,7 +33,7 @@ class HealthApi {
   ///
   /// Returns a [Future] containing a [Response] with a [HealthResponse] as data
   /// Throws [DioException] if API call or serialization fails
-  Future<Response<HealthResponse>> getHealthz({
+  Future<Response<HealthResponse>> getHealthz({ 
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -106,7 +106,7 @@ class HealthApi {
   ///
   /// Returns a [Future] containing a [Response] with a [ReadyResponse] as data
   /// Throws [DioException] if API call or serialization fails
-  Future<Response<ReadyResponse>> getReadyz({
+  Future<Response<ReadyResponse>> getReadyz({ 
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
