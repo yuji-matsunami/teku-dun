@@ -202,9 +202,8 @@ tasks:
       - task: build-runner
 
   build-check:
-    desc: trackedなDart生成コードのドリフトと未追跡生成物を検査する
+    desc: freshな隔離生成物とDart生成コードを比較する
     cmds:
-      - task: build
       - task: build-check-only
 
   analyze:
@@ -223,9 +222,8 @@ tasks:
     desc: Dart APIクライアントの生成物・静的解析・テストをまとめて実行する
     cmds:
       - task: generate-check
+      - task: build-check
       - task: pub-get
-      - task: build-runner
-      - task: build-check-only
       - task: analyze-only
       - task: test-only
 
@@ -260,23 +258,9 @@ tasks:
     env:
       ROOT_DIR: '{{.ROOT_DIR}}'
       DART_CLIENT_DIR: '{{.DART_CLIENT_DIR}}'
+      DART_CLIENT_SDK_IMAGE: '{{.DART_CLIENT_SDK_IMAGE}}'
     cmds:
-      - |
-        set -eu
-        repo_root="$ROOT_DIR"
-        client_dir="$repo_root/$DART_CLIENT_DIR"
-        changed="$(git -C "$client_dir" diff --name-only -- '*.g.dart')"
-        if [ -n "$changed" ]; then
-          echo 'Generated Dart files changed after build_runner:' >&2
-          echo "$changed" >&2
-          exit 1
-        fi
-        untracked="$(git -C "$client_dir" ls-files --others --exclude-standard -- '*.g.dart')"
-        if [ -n "$untracked" ]; then
-          echo 'Generated Dart files are untracked; stage the build_runner output:' >&2
-          echo "$untracked" >&2
-          exit 1
-        fi
+      - '{{.ROOT_DIR}}/scripts/dart-build-check.sh'
 
   analyze-only:
     internal: true

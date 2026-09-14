@@ -14,8 +14,24 @@ includes:
   verify:
     taskfile: taskfiles/Verify.yml
     flatten: true
+  dev:
+    taskfile: taskfiles/Development.yml
 
 tasks:
+  contract:update:
+    desc: OpenAPI契約を検証し、Go・Dart生成物を更新する
+    cmds:
+      - task: openapi:validate
+      - task: openapi:lint
+      - task: api:generate
+      - task: dart:generate
+      - task: dart:build
+
+  contract:verify:
+    desc: OpenAPI契約変更後に全体検証を実行する
+    cmds:
+      - task: verify
+
   default:
     desc: 利用可能なタスクを表示する
     cmds:

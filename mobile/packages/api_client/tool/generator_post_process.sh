@@ -69,5 +69,29 @@ remove_generated_test_exclude_and_ignore_unused_import() {
   '
 }
 
+normalize_generated_text() {
+  awk '
+    {
+      sub(/[[:space:]]+$/, "")
+      lines[NR] = $0
+      if ($0 != "") last_nonempty = NR
+    }
+    END {
+      for (line = 1; line <= last_nonempty; line++) print lines[line]
+    }
+  '
+}
+
 rewrite_file "$gitignore_path" append_pubspec_lock_exception
 rewrite_file "$analysis_options_path" remove_generated_test_exclude_and_ignore_unused_import
+
+# OpenAPI Generator emits trailing spaces and a varying number of blank lines
+# in Markdown and Dart output. Normalize only generator-owned text; build_runner
+# output and hand-written test/tool files are deliberately excluded.
+while IFS= read -r generated_path; do
+  rewrite_file "$generated_path" normalize_generated_text
+done < <(
+  find "$package_dir/lib" "$package_dir/doc" -type f \
+    \( -name '*.dart' -o -name '*.md' \) ! -name '*.g.dart' -print
+  printf '%s\n' "$package_dir/README.md"
+)
