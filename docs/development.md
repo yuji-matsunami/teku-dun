@@ -199,10 +199,10 @@ task smoke SMOKE_API_PORT=18081
 `SMOKE_API_TIMEOUT`はAPI起動待ち時間を秒で指定する正の整数です（デフォルト30秒）。
 `0`や負数、数字以外は入力エラーとして拒否します。
 
-APIディレクトリと接続先アドレスはTask変数で上書きできます。
+接続先アドレスとポートはTask変数で上書きできます。
 
 ```sh
-task smoke API_DIR=api SMOKE_API_ADDR=127.0.0.1 SMOKE_API_PORT=18081
+task smoke SMOKE_API_ADDR=127.0.0.1 SMOKE_API_PORT=18081
 ```
 
 成功時の期待値は以下です（レスポンスボディはJSONです）。

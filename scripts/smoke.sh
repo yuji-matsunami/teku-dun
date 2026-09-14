@@ -4,8 +4,6 @@ set -u
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
-task_exe="${TASK_EXE:-task}"
-api_dir="${API_DIR:-api}"
 api_addr="${SMOKE_API_ADDR:-127.0.0.1}"
 api_port="${SMOKE_API_PORT:-18080}"
 timeout_seconds="${SMOKE_API_TIMEOUT:-30}"
@@ -15,14 +13,6 @@ fail_input() {
   exit 1
 }
 
-case "$task_exe" in
-  '') fail_input 'TASK_EXE must not be empty.' ;;
-  *$'\n'*|*$'\r'*) fail_input 'TASK_EXE must not contain a newline.' ;;
-esac
-
-case "$api_dir" in
-  ''|/*|*'..'*|*[![:alnum:]_./-]*) fail_input 'API_DIR must be a relative path without parent traversal.' ;;
-esac
 case "$api_addr" in
   ''|*[![:print:]]*|*' '*|*$'\t'*) fail_input 'SMOKE_API_ADDR must be a non-empty host or address without whitespace.' ;;
 esac
@@ -67,10 +57,6 @@ esac
 api_pid=''
 db_state='unknown'
 db_start_attempted=0
-
-run_task() {
-  "$task_exe" "$@"
-}
 
 cleanup() {
   status=$?
@@ -183,18 +169,18 @@ fi
 
 echo 'smoke: starting PostGIS'
 db_start_attempted=1
-if ! run_task db:up >"$log_dir/db-up.log" 2>&1; then
+if ! task db:up >"$log_dir/db-up.log" 2>&1; then
   exit 1
 fi
 
 echo 'smoke: applying migrations'
-if ! run_task db:migrate >"$log_dir/db-migrate.log" 2>&1; then
+if ! task db:migrate >"$log_dir/db-migrate.log" 2>&1; then
   exit 1
 fi
 
 api_binary="$log_dir/teku-dun-api"
 echo 'smoke: building Go API'
-if ! (cd -- "$repo_root/$api_dir" && go build -o "$api_binary" ./cmd/api) >"$log_dir/api-build.log" 2>&1; then
+if ! (cd -- "$repo_root/api" && go build -o "$api_binary" ./cmd/api) >"$log_dir/api-build.log" 2>&1; then
   exit 1
 fi
 
