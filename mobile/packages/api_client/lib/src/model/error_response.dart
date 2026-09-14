@@ -121,4 +121,3 @@ class _$ErrorResponseSerializer implements PrimitiveSerializer<ErrorResponse> {
     return result.build();
   }
 }
-

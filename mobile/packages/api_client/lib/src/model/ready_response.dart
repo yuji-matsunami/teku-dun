@@ -12,7 +12,7 @@ part 'ready_response.g.dart';
 /// Successful readiness check response.
 ///
 /// Properties:
-/// * [status] 
+/// * [status]
 @BuiltValue()
 abstract class ReadyResponse implements Built<ReadyResponse, ReadyResponseBuilder> {
   @BuiltValueField(wireName: r'status')
@@ -118,4 +118,3 @@ class ReadyResponseStatusEnum extends EnumClass {
   static BuiltSet<ReadyResponseStatusEnum> get values => _$readyResponseStatusEnumValues;
   static ReadyResponseStatusEnum valueOf(String name) => _$readyResponseStatusEnumValueOf(name);
 }
-
