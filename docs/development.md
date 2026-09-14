@@ -126,6 +126,7 @@ task api:run
 
 APIはデフォルトで`API_ADDR=:8080`、DBは`127.0.0.1:5432`に接続します。
 別のアドレスで待ち受ける場合は、APIプロセスに環境変数を渡します。
+`healthz`はAPIプロセスの稼働状態、`readyz`はPostGISへの接続を含む準備状態を確認します。
 
 ```sh
 API_ADDR=0.0.0.0:8080 task api:run
@@ -276,54 +277,3 @@ task flutter:verify
 - DBコンテナは`task db:down`で停止します。この操作はボリュームを保持します。
 - 再開時は`task db:up`を実行し、必要なら`task db:migrate`を実行します。
 - `task smoke`は成功・失敗のどちらでも一時APIを後片付けします。開始前からrunningだったDBは保持し、停止していたDBは停止状態へ戻し、存在しなかったDBコンテナは停止・削除します。
-
-## トラブルシューティング
-
-### `readyz`が503になる
-
-`readyz`はPostGISへの問い合わせまで確認します。まずDBを起動してマイグレーションを
-適用します。
-
-```sh
-task db:up
-task db:migrate
-task db:verify
-curl -i http://127.0.0.1:8080/readyz
-```
-
-DBコンテナのログは`docker compose logs db`で確認できます。
-
-### Android EmulatorからAPIに接続できない
-
-- エミュレータは`http://10.0.2.2:8080`を指定します。
-- Android側の`localhost`はMacを指しません。
-- `curl http://127.0.0.1:8080/healthz`をMac上で実行し、API自体が起動していることを先に確認します。
-
-### Android SDKまたはエミュレータが見つからない
-
-Android StudioのSDK ManagerでSDK Platform-ToolsとAndroid Emulatorをインストールし、
-AVDを作成して起動します。`fvm flutter doctor -v`で不足しているSDKパスやライセンスを
-確認してください。SDKがない環境ではFlutterのanalyze/testは実行できても、APKビルドや
-端末起動は検証できません。
-
-### Docker、ポート、またはApple Siliconの問題
-
-- Docker Desktopを起動し、`docker info`と`docker compose version`が成功することを確認します。
-- DBの`5432`、通常APIの`8080`、スモークテストの`18080`が他のプロセスに占有されていないか確認します。DBの`5432`はローカル構成で固定しているため、競合するプロセスを停止してから`task db:up`を再実行します。
-- 旧構成の`.env`でDB名や資格情報を変更して初期化したvolumeは、現在の固定値と互換性がありません。データが必要なら先に退避・移行し、不要な場合だけ`task db:reset CONFIRM_DB_RESET=1`でvolumeを削除して作り直します。
-- ComposeのPostGISイメージは`linux/amd64`に固定されています。Apple SiliconではDockerのamd64エミュレーションが動作するため、初回起動やマイグレーションが遅くなることがあります。Docker Desktopのリソース不足やエミュレーションの警告は失敗とは限りません。
-- `task smoke`が既存APIポートを検出した場合は、残っているAPIを停止するか`SMOKE_API_PORT`を未使用ポートに変更します。既存プロセスのレスポンスをスモーク成功とは扱いません。
-
-### 生成ドリフトが検出される
-
-OpenAPIの変更後にGo/Dart生成を更新していない、または generator/Dart SDKのバージョンが
-異なる可能性があります。`task api:generate`と`task dart:generate`、
-`task dart:build`を実行し、差分をレビューしてから再度`task verify`を実行します。
-生成ファイルを手で変更してチェックを回避しないでください。
-
-### 秘密情報が差分に出た
-
-秘密を削除してからコミット履歴と作業ツリーを確認し、漏えいした資格情報はローテーション
-します。ローカルDBは固定の開発専用資格情報を使い、`.env`を必要としません。`.env`は
-将来のツールが作成した場合の誤コミット防止としてGit管理対象外にしています。本番の秘密を
-ローカルファイル、ソース、ログ、コミットへ書かないでください。
