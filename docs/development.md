@@ -327,32 +327,3 @@ OpenAPIの変更後にGo/Dart生成を更新していない、または generato
 します。ローカルDBは固定の開発専用資格情報を使い、`.env`を必要としません。`.env`は
 将来のツールが作成した場合の誤コミット防止としてGit管理対象外にしています。本番の秘密を
 ローカルファイル、ソース、ログ、コミットへ書かないでください。
-
-## Issue #4 の再実行チェックリスト
-
-別メンバーがクリーンなcloneで、次の順に実行結果を記録してください。通常検証と端末確認を
-混ぜず、端末不要の失敗か環境依存の失敗かを区別します。
-
-### 端末不要のチェック
-
-- [ ] Go `1.24.6`、FVM管理Flutter `3.47.0`、Docker、Task `3.53.1`、curlを確認した。
-- [ ] `task db:up`がhealthyになった。
-- [ ] `task db:migrate`が成功した。
-- [ ] `task db:verify`がPostGISのバージョンを表示した。
-- [ ] `task openapi:validate`と`task openapi:lint`が成功した。
-- [ ] `task api:verify`が成功し、Go生成物にドリフトがない。
-- [ ] `task dart:verify`が成功し、Dart生成物にドリフトがない。
-- [ ] `task flutter:verify`が成功した。
-- [ ] `task verify`が成功した（Android端末不要）。
-- [ ] `task smoke`が`{"status":"ok"}`と`{"status":"ready"}`を確認し、APIを停止した。開始時にDBが停止していた場合はDBも停止し、開始前からrunningだったDBは保持された。
-- [ ] `task db:down`後もボリュームが保持されることを確認した。削除が必要な場合だけ`CONFIRM_DB_RESET=1`を指定した。
-
-### Android手動チェック
-
-- [ ] Android Emulatorを起動し、`task api:run`と`task flutter:run API_BASE_URL=http://10.0.2.2:8080`を実行した。
-- [ ] アプリに`API is healthy`と`The health check returned OK.`が表示された。
-- [ ] Mac上の`curl`で`/healthz`が200、`{"status":"ok"}`になることを確認した。
-- [ ] Mac上の`curl`でDB起動中の`/readyz`が200、`{"status":"ready"}`になることを確認した。
-- [ ] （任意）実機でMacのLAN IPを`API_BASE_URL`に指定し、同じLANとファイアウォール設定で疎通した。
-- [ ] 確認後にFlutter、Go API、DBを停止した。
-- [ ] `fvm flutter build apk --debug`が成功し、`build/app/outputs/flutter-apk/app-debug.apk`が生成された。
