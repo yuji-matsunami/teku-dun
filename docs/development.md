@@ -1,8 +1,8 @@
 # 開発手順
 
 このリポジトリのIssue #4で定義した、再現可能な最小開発環境の手順です。
-対象環境は **macOS + Android（AndroidエミュレータまたはAndroid実機）** とします。
-iOS、Windows、Linuxでの動作はこの手順の保証対象ではありません。
+対象環境は **macOS + Android Emulator** とします。Android実機、iOS、Windows、Linuxでの
+動作はこの手順の保証対象ではありません。
 
 ## 構成
 
@@ -151,26 +151,7 @@ The health check returned OK.
 
 ### Android実機
 
-実機とMacを同じLAN（通常は同じWi-Fi）に接続し、MacのLAN IPを確認します。
-
-```sh
-ipconfig getifaddr en0
-```
-
-Wi-Fiインターフェースが`en1`などの場合は、実際に使用しているインターフェースの
-アドレスを指定します。APIをLANから到達可能なアドレスにbindし、`API_BASE_URL`に
-MacのLAN IPを指定します。
-
-```sh
-API_ADDR=0.0.0.0:8080 task api:run
-task flutter:run API_BASE_URL=http://192.168.1.23:8080
-```
-
-`192.168.1.23`は例なので、実際のMacのアドレスに置き換えてください。実機からは
-`localhost`、`127.0.0.1`、エミュレータ専用の`10.0.2.2`を使いません。Macの
-ファイアウォールが有効な場合は、Go APIのTCP `8080`（変更した場合はそのポート）への
-受信を許可してください。公衆ネットワークで全インターフェースにbindしない、
-確認後はAPIを停止する、という点にも注意してください。
+未検証です。実機で動作確認した後に手順を追記します。
 
 ## 端末不要の通常検証
 
@@ -312,12 +293,10 @@ curl -i http://127.0.0.1:8080/readyz
 
 DBコンテナのログは`docker compose logs db`で確認できます。
 
-### AndroidからAPIに接続できない
+### Android EmulatorからAPIに接続できない
 
-- エミュレータは`http://10.0.2.2:8080`、実機は`http://<MacのLAN IP>:8080`を指定します。
+- エミュレータは`http://10.0.2.2:8080`を指定します。
 - Android側の`localhost`はMacを指しません。
-- 実機ではMacと端末が同じLANにいるか、MacのファイアウォールがAPIポートを許可しているかを確認します。
-- APIが`127.0.0.1:8080`だけにbindしている場合、実機から届きません。実機確認時は`API_ADDR=0.0.0.0:8080`など、到達可能なアドレスにbindします。
 - `curl http://127.0.0.1:8080/healthz`をMac上で実行し、API自体が起動していることを先に確認します。
 
 ### Android SDKまたはエミュレータが見つからない
