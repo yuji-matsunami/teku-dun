@@ -2,6 +2,7 @@
 
 set -u
 
+# 実行時のカレントディレクトリに依存せず、リポジトリルートを取得する。
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 api_addr="${SMOKE_API_ADDR:-127.0.0.1}"
@@ -29,6 +30,7 @@ if ((10#$timeout_seconds <= 0)); then
   fail_input 'SMOKE_API_TIMEOUT must be a positive integer.'
 fi
 
+# ログと一時バイナリは、終了時に削除できる一時領域へ置く。
 tmp_root="${TMPDIR:-/tmp}"
 if [[ ! -d "$tmp_root" ]]; then
   fail_input "temporary directory does not exist: $tmp_root"
@@ -58,6 +60,7 @@ api_pid=''
 db_state='unknown'
 db_start_attempted=0
 
+# APIを停止し、DBをスモークテスト開始前の状態へ戻す。
 cleanup() {
   status=$?
   trap - EXIT INT TERM
@@ -84,8 +87,7 @@ cleanup() {
         fi
         ;;
       nonexistent)
-        # The DB container did not exist before this run. Stop and remove only
-        # that container; never use `compose down`, and never remove volumes.
+        # 今回作成したDBコンテナだけを削除し、ボリュームは保持する。
         if ! docker compose stop db >"$log_dir/db-stop.log" 2>&1; then
           echo 'smoke: cleanup failed to stop the temporary DB.' >&2
           cleanup_failed=1
@@ -130,10 +132,12 @@ cleanup() {
   exit "$status"
 }
 
+# 成功・失敗・割り込みを問わずcleanupを通して終了する。
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# DB起動後は元の状態を区別できないため、task db:upより前に記録する。
 if ! running_services="$(docker compose ps --status running --services db 2>"$log_dir/db-state.err")"; then
   echo 'smoke: could not inspect the Compose db state; refusing to change DB state.' >&2
   exit 1
@@ -149,6 +153,7 @@ else
   db_state='nonexistent'
 fi
 
+# 既存APIの応答を今回の成功と誤認しないよう、使用中のポートを拒否する。
 api_url="http://$api_addr:$api_port"
 if curl --silent --show-error --connect-timeout 1 --max-time 2 \
   -o "$log_dir/preflight-healthz.out" -w '%{http_code}' \
@@ -188,6 +193,7 @@ echo "smoke: starting Go API on $api_url"
 API_ADDR="$api_addr:$api_port" "$api_binary" >"$log_dir/api.log" 2>&1 &
 api_pid=$!
 
+# APIが終了していないことも確認しながら、healthzの成功を待つ。
 deadline=$(( $(date +%s) + 10#$timeout_seconds ))
 health_ok=0
 while (( $(date +%s) < deadline )); do
