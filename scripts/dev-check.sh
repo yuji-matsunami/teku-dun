@@ -107,7 +107,25 @@ if [[ "$profile" == 'android' ]] && command -v fvm >/dev/null 2>&1; then
   android_status="$(printf '%s\n' "$doctor_output" | sed -nE '/Android toolchain - develop for Android devices/p' | head -n 1)"
   case "$android_status" in
     '[✓] Android toolchain - develop for Android devices'*) ;;
-    *) report_failure 'Flutter doctor did not report a ready Android toolchain.' ;;
+    '[!] Android toolchain - develop for Android devices'*)
+      android_section="$(printf '%s\n' "$doctor_output" | awk '
+        /^\[[^]]+\] Android toolchain - develop for Android devices/ { capture = 1 }
+        capture { print }
+        capture && /^$/ { exit }
+      ')"
+      if dev_android_license_only_issue "$android_section"; then
+        license_probe_status=0
+        dev_probe_android_licenses "$app_dir" || license_probe_status=$?
+        case "$license_probe_status" in
+          0) ;;
+          10) failures=$((failures + 1)) ;;
+          *) failures=$((failures + 1)) ;;
+        esac
+      else
+        report_failure 'Flutter doctor reported an Android toolchain error unrelated to licenses.'
+      fi
+      ;;
+    *) report_failure 'Flutter doctor did not report a recognizable Android toolchain status.' ;;
   esac
 
   device_output=''

@@ -91,6 +91,7 @@ reportファイルは作らず、診断に必要な実コマンドのstderr/stdo
 # 実装済みの固定入口
 task dev:check PROFILE=core
 task dev:check PROFILE=android
+task dev:accept-android-licenses CONFIRM_ANDROID_LICENSES=1
 task dev:setup PROFILE=core
 task dev:setup PROFILE=android
 task dev:run TARGET=emulator DEVICE_ID=<DEVICE_ID> API_BASE_URL=http://10.0.2.2:8080
@@ -110,6 +111,12 @@ command stringを受け取らない。
 `docker info` と固定イメージを使う後続処理の前提も確認する。`android` はcoreに加え、
 `fvm flutter doctor -v` のAndroid toolchainと、接続済み端末または起動可能なemulatorを診断する。
 
+Android CLIのversion差を吸収するため、license判定は `flutter doctor` の表示だけに依存しない。
+未承諾licenseを検出した場合は固定markerを返し、skillがユーザーへ同意を確認する。ユーザーが
+明示的に同意した後だけ `task dev:accept-android-licenses CONFIRM_ANDROID_LICENSES=1` を実行し、
+表示されたlicenseを承諾してから `dev:check` を再実行する。確認前の実行や無条件の自動承諾はしない。
+新しいAndroid CLIが `--licenses` は不要と正常終了した場合は、未承諾として扱わない。
+
 Goのeffective toolchain確認は `api/` で `go version` を実行する。Goのtoolchain自動取得や
 FVM/FlutterのSDK解決は、read-onlyに見える診断でも不足SDKをdownloadし得る。実行前に
 その可能性をstepログへ出し、完全な無副作用チェックとは表現しない。診断はDBやemulatorを
@@ -122,8 +129,9 @@ FVM/FlutterのSDK解決は、read-onlyに見える診断でも不足SDKをdownlo
 
 `setup core` は `check` の構造確認後、FVMの固定SDK取得、既存 `task flutter:pub-get`、
 `task dart:pub-get`、`task db:up`、`task db:migrate`、`task db:verify` を順次実行する。
-`setup android` はcoreに加えAndroid toolchain診断まで行うが、AVDの新規作成やGUI操作、licenseへの
-代理同意は行わない。setup成功は依存取得とPostGIS検証までであり、アプリ疎通成功を意味しない。
+`setup android` はcoreに加えAndroid toolchain診断まで行うが、AVDの新規作成やGUI操作は行わない。
+license承諾が必要なら上記の明示確認を先に完了する。setup成功は依存取得とPostGIS検証までであり、
+アプリ疎通成功を意味しない。
 
 副作用はSDK・module/package cacheのdownload、`.dart_tool`等のローカル生成、DBコンテナ起動、
 migration適用である。失敗時も取得済みcacheとmigration済みデータは残る。開始前にDBが停止して

@@ -25,7 +25,8 @@ PostGIS は Docker Compose、Go API と Flutter アプリは Mac 上で実行し
 環境診断・依存取得は `task dev:check PROFILE=core` と
 `task dev:setup PROFILE=core` を使います。Android toolchainも診断する場合は
 `PROFILE=android` を指定します。Agentには [setup skill](../.agents/skills/setup-teku-dun-development/SKILL.md)
-を依頼できます。Android向けsetupもAVDの作成やlicenseの代理同意はしません。
+を依頼できます。未承諾のAndroid SDKライセンスが検出された場合、Agentはユーザーへ確認し、
+明示的な同意を得た後だけ確認フラグ付きのライセンス承諾Taskを実行します。AVDは自動作成しません。
 
 ## アプリの起動とAndroid手動確認
 

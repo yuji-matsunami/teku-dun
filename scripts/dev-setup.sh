@@ -44,7 +44,7 @@ echo "==> dev:setup: install the pinned Flutter SDK $flutter_version."
 (cd -- "$app_dir" && fvm install "$flutter_version")
 
 if [[ "$profile" == 'android' ]]; then
-  echo '==> dev:setup: inspect the Android toolchain (manual SDK and license setup may be required).'
+  echo '==> dev:setup: inspect the Android toolchain.'
   doctor_output=''
   doctor_status=0
   doctor_output="$(cd -- "$app_dir" && fvm flutter doctor -v 2>&1)" || doctor_status=$?
@@ -52,8 +52,26 @@ if [[ "$profile" == 'android' ]]; then
   android_status="$(printf '%s\n' "$doctor_output" | sed -nE '/Android toolchain - develop for Android devices/p' | head -n 1)"
   case "$android_status" in
     '[✓] Android toolchain - develop for Android devices'*) ;;
+    '[!] Android toolchain - develop for Android devices'*)
+      android_section="$(printf '%s\n' "$doctor_output" | awk '
+        /^\[[^]]+\] Android toolchain - develop for Android devices/ { capture = 1 }
+        capture { print }
+        capture && /^$/ { exit }
+      ')"
+      if dev_android_license_only_issue "$android_section"; then
+        license_probe_status=0
+        dev_probe_android_licenses "$app_dir" || license_probe_status=$?
+        if ((license_probe_status != 0)); then
+          dev_error 'Android setup stopped before dependency or DB changes.'
+          exit 1
+        fi
+      else
+        dev_error 'Flutter doctor reported an Android toolchain error unrelated to licenses; setup stopped before dependency or DB changes.'
+        exit 1
+      fi
+      ;;
     *)
-      dev_error 'Flutter doctor did not report a ready Android toolchain; setup stopped before dependency or DB changes.'
+      dev_error 'Flutter doctor did not report a recognizable Android toolchain status; setup stopped before dependency or DB changes.'
       exit 1
       ;;
   esac

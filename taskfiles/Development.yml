@@ -25,6 +25,19 @@ tasks:
     cmds:
       - ./scripts/dev-check.sh
 
+  accept-android-licenses:
+    desc: ユーザーの明示同意後にAndroid SDKライセンスを承諾する
+    requires:
+      vars:
+        - name: CONFIRM_ANDROID_LICENSES
+          enum: ['1']
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      CONFIRM_ANDROID_LICENSES: '{{.CONFIRM_ANDROID_LICENSES}}'
+    cmds:
+      - ./scripts/accept-android-licenses.sh
+
   setup:
     desc: 固定Flutter SDK・依存・ローカルDBを準備する（PROFILE=core|android）
     requires:

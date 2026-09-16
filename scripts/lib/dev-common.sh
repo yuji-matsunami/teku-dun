@@ -76,6 +76,60 @@ dev_validate_profile() {
   esac
 }
 
+dev_android_license_state() {
+  local status="$1"
+  local output="$2"
+
+  if ((status == 0)) && printf '%s\n' "$output" | grep -Eq \
+    '(All SDK package licenses accepted|The --licenses option is no longer needed)'; then
+    printf 'ready\n'
+    return 0
+  fi
+  if printf '%s\n' "$output" | grep -Eiq \
+    '(licenses? (have|has) not been accepted|licenses? not accepted|Review licenses that have not been accepted|Accept\?.*\[y/N\])'; then
+    printf 'required\n'
+    return 0
+  fi
+  printf 'unknown\n'
+}
+
+dev_android_license_only_issue() {
+  local android_section="$1"
+  local other_android_errors
+
+  if ! printf '%s\n' "$android_section" | grep -Eiq \
+    '(Android license status unknown\.|Some Android licenses not accepted\.|Android licenses not accepted\.)'; then
+    return 1
+  fi
+  other_android_errors="$(printf '%s\n' "$android_section" | grep '    ✗' | grep -Eiv \
+    '(Android license status unknown\.|Some Android licenses not accepted\.|Android licenses not accepted\.)' || :)"
+  [[ -z "$other_android_errors" ]]
+}
+
+dev_probe_android_licenses() {
+  local app_dir="$1"
+  local license_output license_status=0 license_state
+
+  license_output="$(cd -- "$app_dir" && fvm flutter doctor --android-licenses </dev/null 2>&1)" || license_status=$?
+  license_state="$(dev_android_license_state "$license_status" "$license_output")"
+  case "$license_state" in
+    ready)
+      echo 'Android SDK licenses do not require additional acceptance.'
+      return 0
+      ;;
+    required)
+      printf '%s\n' "$license_output" >&2
+      dev_error 'ANDROID_LICENSES_REQUIRED: ask the user to accept the Android SDK licenses, then run task dev:accept-android-licenses CONFIRM_ANDROID_LICENSES=1.'
+      return 10
+      ;;
+    *)
+      printf '%s\n' "$license_output" >&2
+      dev_error 'Android SDK license status could not be determined.'
+      return 11
+      ;;
+  esac
+}
+
 dev_version_at_least() {
   local actual="$1"
   local minimum="$2"
