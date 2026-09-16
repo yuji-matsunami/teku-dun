@@ -2,10 +2,9 @@
 
 set -u
 
+# 実行時のカレントディレクトリに依存せず、リポジトリルートを取得する。
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
-task_exe="${TASK_EXE:-task}"
-api_dir="${API_DIR:-api}"
 api_addr="${SMOKE_API_ADDR:-127.0.0.1}"
 api_port="${SMOKE_API_PORT:-18080}"
 timeout_seconds="${SMOKE_API_TIMEOUT:-30}"
@@ -15,14 +14,6 @@ fail_input() {
   exit 1
 }
 
-case "$task_exe" in
-  '') fail_input 'TASK_EXE must not be empty.' ;;
-  *$'\n'*|*$'\r'*) fail_input 'TASK_EXE must not contain a newline.' ;;
-esac
-
-case "$api_dir" in
-  ''|/*|*'..'*|*[![:alnum:]_./-]*) fail_input 'API_DIR must be a relative path without parent traversal.' ;;
-esac
 case "$api_addr" in
   ''|*[![:print:]]*|*' '*|*$'\t'*) fail_input 'SMOKE_API_ADDR must be a non-empty host or address without whitespace.' ;;
 esac
@@ -39,6 +30,7 @@ if ((10#$timeout_seconds <= 0)); then
   fail_input 'SMOKE_API_TIMEOUT must be a positive integer.'
 fi
 
+# ログと一時バイナリは、終了時に削除できる一時領域へ置く。
 tmp_root="${TMPDIR:-/tmp}"
 if [[ ! -d "$tmp_root" ]]; then
   fail_input "temporary directory does not exist: $tmp_root"
@@ -68,10 +60,7 @@ api_pid=''
 db_state='unknown'
 db_start_attempted=0
 
-run_task() {
-  "$task_exe" "$@"
-}
-
+# APIを停止し、DBをスモークテスト開始前の状態へ戻す。
 cleanup() {
   status=$?
   trap - EXIT INT TERM
@@ -98,8 +87,7 @@ cleanup() {
         fi
         ;;
       nonexistent)
-        # The DB container did not exist before this run. Stop and remove only
-        # that container; never use `compose down`, and never remove volumes.
+        # 今回作成したDBコンテナだけを削除し、ボリュームは保持する。
         if ! docker compose stop db >"$log_dir/db-stop.log" 2>&1; then
           echo 'smoke: cleanup failed to stop the temporary DB.' >&2
           cleanup_failed=1
@@ -144,10 +132,12 @@ cleanup() {
   exit "$status"
 }
 
+# 成功・失敗・割り込みを問わずcleanupを通して終了する。
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# DB起動後は元の状態を区別できないため、task db:upより前に記録する。
 if ! running_services="$(docker compose ps --status running --services db 2>"$log_dir/db-state.err")"; then
   echo 'smoke: could not inspect the Compose db state; refusing to change DB state.' >&2
   exit 1
@@ -163,6 +153,7 @@ else
   db_state='nonexistent'
 fi
 
+# 既存APIの応答を今回の成功と誤認しないよう、使用中のポートを拒否する。
 api_url="http://$api_addr:$api_port"
 if curl --silent --show-error --connect-timeout 1 --max-time 2 \
   -o "$log_dir/preflight-healthz.out" -w '%{http_code}' \
@@ -183,18 +174,18 @@ fi
 
 echo 'smoke: starting PostGIS'
 db_start_attempted=1
-if ! run_task db:up >"$log_dir/db-up.log" 2>&1; then
+if ! task db:up >"$log_dir/db-up.log" 2>&1; then
   exit 1
 fi
 
 echo 'smoke: applying migrations'
-if ! run_task db:migrate >"$log_dir/db-migrate.log" 2>&1; then
+if ! task db:migrate >"$log_dir/db-migrate.log" 2>&1; then
   exit 1
 fi
 
 api_binary="$log_dir/teku-dun-api"
 echo 'smoke: building Go API'
-if ! (cd -- "$repo_root/$api_dir" && go build -o "$api_binary" ./cmd/api) >"$log_dir/api-build.log" 2>&1; then
+if ! (cd -- "$repo_root/api" && go build -o "$api_binary" ./cmd/api) >"$log_dir/api-build.log" 2>&1; then
   exit 1
 fi
 
@@ -202,6 +193,7 @@ echo "smoke: starting Go API on $api_url"
 API_ADDR="$api_addr:$api_port" "$api_binary" >"$log_dir/api.log" 2>&1 &
 api_pid=$!
 
+# APIが終了していないことも確認しながら、healthzの成功を待つ。
 deadline=$(( $(date +%s) + 10#$timeout_seconds ))
 health_ok=0
 while (( $(date +%s) < deadline )); do

@@ -48,6 +48,7 @@ APKのbuild成功だけでは端末上の接続確認になりません。setup�
 
 PR #24ではFlutter 3.47.0とAndroid 16（API 36）ARM64のPixel 10 Emulatorを使い、
 debug APKの生成、Go APIとの疎通、エラー表示、API復旧後の再試行を確認しています。
+Android実機での動作は未検証です。
 
 ## 検証と契約更新
 
