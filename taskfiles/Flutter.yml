@@ -47,6 +47,15 @@ tasks:
       - task: pub-get
       - '{{.FLUTTER}} run --dart-define=API_BASE_URL="$API_BASE_URL"'
 
+  build-android:
+    desc: 固定FVM SDKでAPI接続先を注入したAndroid debug APKをビルドする
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      API_BASE_URL: '{{.API_BASE_URL}}'
+    cmds:
+      - ./scripts/flutter-build-android.sh
+
   verify:
     desc: Flutterアプリの静的解析とテストをまとめて実行する
     cmds:

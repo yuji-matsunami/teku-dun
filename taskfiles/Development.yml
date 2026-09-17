@@ -1,0 +1,69 @@
+version: '3'
+
+vars:
+  PROFILE: '{{.PROFILE | default "core"}}'
+  TASK_VERSION_MIN: '3.53.1'
+
+tasks:
+  test:
+    desc: 開発用スクリプトの入力検証・生成比較・プロセス所有を検証する
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - ./scripts/tests/dev-tools-test.sh
+
+  check:
+    desc: 開発環境と固定SDKを診断する（PROFILE=core|android）
+    requires:
+      vars:
+        - name: PROFILE
+          enum: ['core', 'android']
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      PROFILE: '{{.PROFILE}}'
+      TASK_VERSION_MIN: '{{.TASK_VERSION_MIN}}'
+    cmds:
+      - ./scripts/dev-check.sh
+
+  accept-android-licenses:
+    desc: ユーザーの明示同意後にAndroid SDKライセンスを承諾する
+    requires:
+      vars:
+        - name: CONFIRM_ANDROID_LICENSES
+          enum: ['1']
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      CONFIRM_ANDROID_LICENSES: '{{.CONFIRM_ANDROID_LICENSES}}'
+    cmds:
+      - ./scripts/accept-android-licenses.sh
+
+  setup:
+    desc: 固定Flutter SDK・依存・ローカルDBを準備する（PROFILE=core|android）
+    requires:
+      vars:
+        - name: PROFILE
+          enum: ['core', 'android']
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      PROFILE: '{{.PROFILE}}'
+    cmds:
+      - ./scripts/dev-setup.sh
+
+  run:
+    desc: 指定したAndroid端末でローカルAPIとFlutter開発セッションを起動する
+    requires:
+      vars:
+        - name: TARGET
+          enum: ['emulator', 'device']
+        - name: DEVICE_ID
+        - name: API_BASE_URL
+    dir: '{{.ROOT_DIR}}'
+    env:
+      ROOT_DIR: '{{.ROOT_DIR}}'
+      TARGET: '{{.TARGET}}'
+      DEVICE_ID: '{{.DEVICE_ID}}'
+      API_BASE_URL: '{{.API_BASE_URL}}'
+    cmds:
+      - ./scripts/dev-session.sh

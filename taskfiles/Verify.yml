@@ -12,6 +12,7 @@ tasks:
   verify:
     desc: 端末不要の全コンポーネント検証を順番に実行する
     cmds:
+      - task: dev:test
       - task: openapi:validate
       - task: openapi:lint
       - task: api:verify
