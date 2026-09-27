@@ -46,6 +46,21 @@ type HealthResponse struct {
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
 
+// LocationRequest defines model for LocationRequest.
+type LocationRequest struct {
+	// AccuracyM Horizontal accuracy in metres.
+	AccuracyM float64 `json:"accuracy_m"`
+
+	// Latitude Latitude in decimal degrees.
+	Latitude float64 `json:"latitude"`
+
+	// Longitude Longitude in decimal degrees.
+	Longitude float64 `json:"longitude"`
+
+	// RecordedAt Device-recorded time in RFC 3339 format; requests more than five minutes in the future are invalid.
+	RecordedAt time.Time `json:"recorded_at"`
+}
+
 // ReadyResponse Successful readiness check response.
 type ReadyResponse struct {
 	Status ReadyResponseStatus `json:"status"`
@@ -59,6 +74,9 @@ type SessionRequest struct {
 	// StartDatetime Immutable session start time in RFC 3339 format.
 	StartDatetime time.Time `json:"start_datetime"`
 }
+
+// EventID defines model for EventID.
+type EventID = string
 
 // SessionID defines model for SessionID.
 type SessionID = string
@@ -78,6 +96,9 @@ type ServiceUnavailable = ErrorResponse
 // PutSessionJSONRequestBody defines body for PutSession for application/json ContentType.
 type PutSessionJSONRequestBody = SessionRequest
 
+// PutLocationJSONRequestBody defines body for PutLocation for application/json ContentType.
+type PutLocationJSONRequestBody = LocationRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Check whether the service is alive
@@ -89,6 +110,9 @@ type ServerInterface interface {
 	// Create or update a walking session start time
 	// (PUT /sessions/{session_id})
 	PutSession(w http.ResponseWriter, r *http.Request, sessionId SessionID)
+	// Store or replay a location event
+	// (PUT /sessions/{session_id}/locations/{event_id})
+	PutLocation(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -110,6 +134,12 @@ func (_ Unimplemented) GetReadyz(w http.ResponseWriter, r *http.Request) {
 // Create or update a walking session start time
 // (PUT /sessions/{session_id})
 func (_ Unimplemented) PutSession(w http.ResponseWriter, r *http.Request, sessionId SessionID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Store or replay a location event
+// (PUT /sessions/{session_id}/locations/{event_id})
+func (_ Unimplemented) PutLocation(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -166,6 +196,40 @@ func (siw *ServerInterfaceWrapper) PutSession(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutSession(w, r, sessionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutLocation operation middleware
+func (siw *ServerInterfaceWrapper) PutLocation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "session_id" -------------
+	var sessionId SessionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session_id", chi.URLParam(r, "session_id"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "event_id" -------------
+	var eventId EventID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "event_id", chi.URLParam(r, "event_id"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "event_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutLocation(w, r, sessionId, eventId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -297,6 +361,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/sessions/{session_id}", wrapper.PutSession)
 	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/sessions/{session_id}/locations/{event_id}", wrapper.PutLocation)
+	})
 
 	return r
 }
@@ -304,30 +371,35 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"H4sIAAAAAAAC/8xYTW8URxP+K61+Oe6HwX6ll31PxsSxL8gyRjnYDmrP1O40nukeuqvXLNZIeB0kolyI",
-	"hBTlhJQvwYUcSG75NyOH/Iyousezsx/BJBAnt5ndrqqnvp7qmmMe6SzXChRa3jvmuTAiAwTj326DtVKr",
-	"zZv0EoONjMxRasV7/JZW7YdgNIuE0kpGImV37mzeZDIGhbI/kmrAMAF2JNJDerZBVYe3uCT5XGDCW1yJ",
-	"DHiPV//elTFvcQP3nTQQ8x4aBy1uowQyEdAhgiHxT3eX2tdFu7/aXt8//l/Rbr6u/JnXq9eKK7zFcZR7",
-	"HGikGvCiKAiGzbWy4CNxQ8TbcN+BRXqLtEJQ/lHkeSojQVHp3rMUmuMG4CsG+rzH/9OdRLkb/rXdj4zR",
-	"ZrsyEkxOh3gnAWaCUXag4xHThlHYWJ0kJi2TaihSGXd40eJrWvVTGV0yRpllDsVBCmwoUgcE08BQUkJZ",
-	"VCGy7EhiwoRiIoogR4gZDEGhh31L47p2Kr5c2FXNsViDZUojgwfSBkC3wQxlBHeUGAqZkmuXDA21EQOC",
-	"6HGwSLs09hhzoyOw1rdWVRsdTkoq/WR+2sRc595GoWJhYgZ0jp2XOTOAziiI2cHIq1/d2qRuzY3OwaAM",
-	"fRDpeLFKSn8mokQqaBsQsf8hWCAZ0gQPRJanod29X3ddI8BzPdjiGVgrBgvsbbhMqFkz1elpS1UmqVEo",
-	"fCQy6izo9ybr7AYvJ/b36/P64B5ESNg2QKSYvCXKLqJE9V3KUjkERUmLEogO64DPB9eiQOefQLmMgOhD",
-	"Mj5xRx9eiL1SsgjzNnn/TpApTvIvYvYxnoYdfnoP5NUgalCwiGNJuEW61cDTF6mFBRAN3o0FAspsgd+b",
-	"NX+dU4KXYHSaScW219fY8vLyddbXJhNIMQhPvMdJa9urfQfvmijmvSQBqfp6HuAOHDp20ylWnrxiGzs7",
-	"W9Sb7Oz7L9/89Fn5aFyOfy5PfylPn569ev7bt4/LkxdsPXU0KVk5/rE8fVmOvyvH35Snr8vTJ+XJqz1V",
-	"jl97ic/fPHv+65OnZ49Py5MX5clX5ckPZ09evnn2ojz5uhx/UT4a7ylyTKJPY41jdWuTt/gQjA0AlzpX",
-	"O0uUJ52DErnkPb7cWeosU7UITHwWuonvmIf0PACc93Lb849lgtlmIVbsdJSAOqelmgWlZYK6i1JCGfeE",
-	"vBnzHv8YcKOyNzPJry0tfTAynyGBPxw0NQdVaP2xvnApXvbIm50nQtkjMD6wIT+h4auZApEzEke8t7vf",
-	"4tZlmTAj3uNrnhOOEsCkkp11kYpGDCzVfVDL90lh1xPBe5dA7UZ9nTifhXZhJWwHq39jIUwz68V1UM2h",
-	"osX/u7T8z9RAcyIy1POB/FcW6cxgeo86rWfSojqtBoHtHk82k8JvIA4XXX+0gXAna0yOvjZMzO0/rHn1",
-	"rJYl6W/ye8o6iuzkBhalEhS5HzPhMKGzIeyEXztkus9spPNgCxPSQfRIuTIiwg5bnZgK+LSRA6n8ea2g",
-	"nUnlkFBDzqRCMEOR2v/vKa3SAKEvlUhp4UAp0vpI6PNUH81hrU3vqZ3pcNCqUg9a0ccqI31pLE6WAr9B",
-	"nAfJDMHsKQORNnGA7zUJZEeJjJLmJThkNAI5hLjjh9Y0C2w5rO4QfiZNltzdxRU7OdKdLMHFfhjpYPGG",
-	"jkcfrC1mbjfF9NWBluBijrtWFpTh/O3lPK6+m1cC4S1CUivvNhZdL7JysUi9vnmB6xcL1GvqhP/eLrBg",
-	"H3tr3xsQ6PdQl9OFa74NGzFqUAAdIgLwqqn4Qn1MR3nNGUOVnmiLvMWdSXmPd31tVHrm8xJIpxqw1M4z",
-	"NObHVvUppOKhojWr5pMZF0iPBWW1Cas0k2oAFquPLJU271KxX/weAAD//1p4ZZToEQAA",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

@@ -68,6 +68,7 @@ Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 [*HealthApi*](doc/HealthApi.md) | [**getHealthz**](doc/HealthApi.md#gethealthz) | **GET** /healthz | Check whether the service is alive
 [*HealthApi*](doc/HealthApi.md) | [**getReadyz**](doc/HealthApi.md#getreadyz) | **GET** /readyz | Check whether the service is ready
+[*WalkApi*](doc/WalkApi.md) | [**putLocation**](doc/WalkApi.md#putlocation) | **PUT** /sessions/{session_id}/locations/{event_id} | Store or replay a location event
 [*WalkApi*](doc/WalkApi.md) | [**putSession**](doc/WalkApi.md#putsession) | **PUT** /sessions/{session_id} | Create or update a walking session start time
 
 
@@ -75,6 +76,7 @@ Class | Method | HTTP request | Description
 
  - [ErrorResponse](doc/ErrorResponse.md)
  - [HealthResponse](doc/HealthResponse.md)
+ - [LocationRequest](doc/LocationRequest.md)
  - [ReadyResponse](doc/ReadyResponse.md)
  - [SessionRequest](doc/SessionRequest.md)
 
