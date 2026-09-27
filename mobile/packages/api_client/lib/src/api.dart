@@ -10,6 +10,7 @@ import 'package:teku_dun_api_client/src/auth/basic_auth.dart';
 import 'package:teku_dun_api_client/src/auth/bearer_auth.dart';
 import 'package:teku_dun_api_client/src/auth/oauth.dart';
 import 'package:teku_dun_api_client/src/api/health_api.dart';
+import 'package:teku_dun_api_client/src/api/walk_api.dart';
 
 class TekuDunApiClient {
   static const String basePath = r'http://localhost';
@@ -69,5 +70,11 @@ class TekuDunApiClient {
   /// by doing that all interceptors will not be executed
   HealthApi getHealthApi() {
     return HealthApi(dio, serializers);
+  }
+
+  /// Get WalkApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  WalkApi getWalkApi() {
+    return WalkApi(dio, serializers);
   }
 }
