@@ -6,8 +6,11 @@ doc/ErrorResponse.md
 doc/HealthApi.md
 doc/HealthResponse.md
 doc/ReadyResponse.md
+doc/SessionRequest.md
+doc/WalkApi.md
 lib/src/api.dart
 lib/src/api/health_api.dart
+lib/src/api/walk_api.dart
 lib/src/api_util.dart
 lib/src/auth/api_key_auth.dart
 lib/src/auth/auth.dart
@@ -19,6 +22,7 @@ lib/src/model/date.dart
 lib/src/model/error_response.dart
 lib/src/model/health_response.dart
 lib/src/model/ready_response.dart
+lib/src/model/session_request.dart
 lib/src/serializers.dart
 lib/teku_dun_api_client.dart
 pubspec.yaml
