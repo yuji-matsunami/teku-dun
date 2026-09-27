@@ -1,6 +1,52 @@
 version: '3'
 
+vars:
+  SQLC_VERSION: 'v1.29.0'
+
 tasks:
+  generate:
+    desc: sqlcでPostgreSQLアクセスコードを生成する
+    dir: '{{.ROOT_DIR}}/api'
+    cmds:
+      - go run github.com/sqlc-dev/sqlc/cmd/sqlc@{{.SQLC_VERSION}} generate -f sqlc.yaml
+
+  generate-check:
+    desc: sqlc生成物にドリフトがないことを検査する
+    dir: '{{.ROOT_DIR}}/api'
+    cmds:
+      - |
+        set -eu
+        tmp_dir=''
+        cleanup() {
+          exit_code=$?
+          if [ -n "$tmp_dir" ] && [ -d "$tmp_dir" ]; then
+            rm -rf "$tmp_dir"
+          fi
+          exit "$exit_code"
+        }
+        trap cleanup EXIT
+        tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/teku-dun-sqlc-generate-check.XXXXXX")"
+        root_dir="$(pwd)"
+        cp -R "$root_dir/../db/migrations" "$tmp_dir/migrations"
+        cp "$root_dir/internal/walk/postgres/queries.sql" "$tmp_dir/queries.sql"
+        sed \
+          -e 's#schema: "../db/migrations"#schema: "migrations"#' \
+          -e 's#queries: "internal/walk/postgres/queries.sql"#queries: "queries.sql"#' \
+          -e 's#out: "internal/walk/postgres/sqlc"#out: "sqlc"#' \
+          sqlc.yaml > "$tmp_dir/sqlc.yaml"
+        go run github.com/sqlc-dev/sqlc/cmd/sqlc@{{.SQLC_VERSION}} generate -f "$tmp_dir/sqlc.yaml"
+        diff -ru internal/walk/postgres/sqlc "$tmp_dir/sqlc"
+
+  sqlc-generate:
+    desc: sqlc生成タスクの別名
+    cmds:
+      - task: generate
+
+  sqlc-generate-check:
+    desc: sqlc生成チェックタスクの別名
+    cmds:
+      - task: generate-check
+
   up:
     desc: DBコンテナを起動し、healthyになるまで待機する
     cmds:
