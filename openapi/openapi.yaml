@@ -95,6 +95,37 @@ paths:
           $ref: '#/components/responses/Conflict'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /sessions/{session_id}/locations/{event_id}:
+    put:
+      tags:
+        - walk
+      operationId: putLocation
+      summary: Store or replay a location event
+      description: |
+        Stores a location event for a walking session. The server records the
+        time at which the request is received. Authentication is out of scope
+        for this API contract.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+        - $ref: '#/components/parameters/EventID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationRequest'
+      responses:
+        '204':
+          description: Location event accepted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 components:
   parameters:
     SessionID:
@@ -102,6 +133,14 @@ components:
       in: path
       required: true
       description: Non-zero canonical UUID identifying the walking session.
+      schema:
+        type: string
+        pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    EventID:
+      name: event_id
+      in: path
+      required: true
+      description: Non-zero canonical UUID identifying the immutable event record.
       schema:
         type: string
         pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
@@ -178,3 +217,33 @@ components:
           type: string
           format: date-time
           description: Immutable session start time in RFC 3339 format.
+    LocationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - recorded_at
+        - latitude
+        - longitude
+        - accuracy_m
+      properties:
+        recorded_at:
+          type: string
+          format: date-time
+          description: Device-recorded time in RFC 3339 format; requests more than five minutes in the future are invalid.
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+          description: Latitude in decimal degrees.
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+          description: Longitude in decimal degrees.
+        accuracy_m:
+          type: number
+          format: double
+          minimum: 0
+          description: Horizontal accuracy in metres.
