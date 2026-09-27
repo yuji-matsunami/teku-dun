@@ -75,6 +75,21 @@ type SessionRequest struct {
 	StartDatetime time.Time `json:"start_datetime"`
 }
 
+// StepsRequest defines model for StepsRequest.
+type StepsRequest struct {
+	// EndDatetime Immutable interval end in RFC 3339 format.
+	EndDatetime time.Time `json:"end_datetime"`
+
+	// Revision Client revision used for idempotent correction.
+	Revision int64 `json:"revision"`
+
+	// StartDatetime Immutable interval start in RFC 3339 format, aligned to a one-minute interval from the session origin.
+	StartDatetime time.Time `json:"start_datetime"`
+
+	// Steps Non-negative step count.
+	Steps int32 `json:"steps"`
+}
+
 // EventID defines model for EventID.
 type EventID = string
 
@@ -99,6 +114,9 @@ type PutSessionJSONRequestBody = SessionRequest
 // PutLocationJSONRequestBody defines body for PutLocation for application/json ContentType.
 type PutLocationJSONRequestBody = LocationRequest
 
+// PutStepsJSONRequestBody defines body for PutSteps for application/json ContentType.
+type PutStepsJSONRequestBody = StepsRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Check whether the service is alive
@@ -113,6 +131,9 @@ type ServerInterface interface {
 	// Store or replay a location event
 	// (PUT /sessions/{session_id}/locations/{event_id})
 	PutLocation(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID)
+	// Create or update a steps event
+	// (PUT /sessions/{session_id}/steps/{event_id})
+	PutSteps(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -140,6 +161,12 @@ func (_ Unimplemented) PutSession(w http.ResponseWriter, r *http.Request, sessio
 // Store or replay a location event
 // (PUT /sessions/{session_id}/locations/{event_id})
 func (_ Unimplemented) PutLocation(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create or update a steps event
+// (PUT /sessions/{session_id}/steps/{event_id})
+func (_ Unimplemented) PutSteps(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -230,6 +257,40 @@ func (siw *ServerInterfaceWrapper) PutLocation(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutLocation(w, r, sessionId, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutSteps operation middleware
+func (siw *ServerInterfaceWrapper) PutSteps(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "session_id" -------------
+	var sessionId SessionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session_id", chi.URLParam(r, "session_id"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "event_id" -------------
+	var eventId EventID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "event_id", chi.URLParam(r, "event_id"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "event_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutSteps(w, r, sessionId, eventId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -364,6 +425,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/sessions/{session_id}/locations/{event_id}", wrapper.PutLocation)
 	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/sessions/{session_id}/steps/{event_id}", wrapper.PutSteps)
+	})
 
 	return r
 }
@@ -371,35 +435,40 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
