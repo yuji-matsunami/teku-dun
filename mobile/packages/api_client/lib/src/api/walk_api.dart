@@ -12,6 +12,7 @@ import 'package:teku_dun_api_client/src/api_util.dart';
 import 'package:teku_dun_api_client/src/model/error_response.dart';
 import 'package:teku_dun_api_client/src/model/location_request.dart';
 import 'package:teku_dun_api_client/src/model/session_request.dart';
+import 'package:teku_dun_api_client/src/model/steps_request.dart';
 
 class WalkApi {
 
@@ -136,6 +137,77 @@ class WalkApi {
     try {
       const _type = FullType(SessionRequest);
       _bodyData = _serializers.serialize(sessionRequest, specifiedType: _type);
+
+    } catch(error, stackTrace) {
+      throw DioException(
+         requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    return _response;
+  }
+
+  /// Create or update a steps event
+  /// Stores a one-minute steps interval measured from the session start. Clients send the final partial interval only when a session ends. Start and end times are immutable. A lower revision is a no-op, an equal revision with equal steps is a no-op, an equal revision with different steps is a conflict, and a higher revision updates the event. The server records the time at which the request is received. Authentication is out of scope for this API contract. 
+  ///
+  /// Parameters:
+  /// * [sessionId] - Non-zero canonical UUID identifying the walking session.
+  /// * [eventId] - Non-zero canonical UUID identifying the immutable event record.
+  /// * [stepsRequest] 
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future]
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<void>> putSteps({ 
+    required String sessionId,
+    required String eventId,
+    required StepsRequest stepsRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/sessions/{session_id}/steps/{event_id}'.replaceAll('{' r'session_id' '}', encodeQueryParameter(_serializers, sessionId, const FullType(String)).toString()).replaceAll('{' r'event_id' '}', encodeQueryParameter(_serializers, eventId, const FullType(String)).toString());
+    final _options = Options(
+      method: r'PUT',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(StepsRequest);
+      _bodyData = _serializers.serialize(stepsRequest, specifiedType: _type);
 
     } catch(error, stackTrace) {
       throw DioException(

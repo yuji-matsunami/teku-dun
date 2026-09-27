@@ -18,4 +18,5 @@ export 'package:teku_dun_api_client/src/model/health_response.dart';
 export 'package:teku_dun_api_client/src/model/location_request.dart';
 export 'package:teku_dun_api_client/src/model/ready_response.dart';
 export 'package:teku_dun_api_client/src/model/session_request.dart';
+export 'package:teku_dun_api_client/src/model/steps_request.dart';
 
