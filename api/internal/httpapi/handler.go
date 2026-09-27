@@ -25,11 +25,20 @@ type DBChecker interface {
 type Handler struct {
 	db          DBChecker
 	pingTimeout time.Duration
+	walk        WalkService
 }
 
 // NewHandlerは検証済みの設定とDB依存を受け取り、health/readinessハンドラーを生成する。
 func NewHandler(db DBChecker, pingTimeout time.Duration) *Handler {
 	return &Handler{db: db, pingTimeout: pingTimeout}
+}
+
+// WithWalkServiceは歩行データのユースケースをHTTPハンドラーへ注入する。
+// 既存のhealth/readiness用コンストラクターを維持したまま、機能APIだけを
+// テスト用の偽物へ差し替えられるようにする。
+func (h *Handler) WithWalkService(service WalkService) *Handler {
+	h.walk = service
+	return h
 }
 
 // GetHealthzは外部依存を確認せず、プロセスの稼働状態を返す。
