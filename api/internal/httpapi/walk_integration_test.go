@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk"
 	walkpostgres "github.com/yuji-matsunami/teku-dun/api/internal/walk/postgres"
 )
 
-// Each test owns its schema; TEST_DATABASE_URL must point to a disposable PostGIS database.
+// 各テストは専用スキーマを作るため、TEST_DATABASE_URLには破棄可能なPostGISを指定する。
 func TestWalkHTTPPostGIS(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -59,7 +60,13 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := NewHandler(pool, time.Second).WithWalkService(walk.NewService(walkpostgres.NewRepository(pool)))
-	router := openapi.Handler(h)
+	validator, err := NewOpenAPIRequestValidator()
+	if err != nil {
+		t.Fatalf("create request validator: %v", err)
+	}
+	router := chi.NewRouter()
+	router.Use(ValidateRequestBody, validator)
+	openapi.HandlerFromMux(h, router)
 	put := func(path, body string, want int) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body))
@@ -74,19 +81,74 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 		}
 	}
 	session := "/sessions/10000000-0000-4000-8000-000000000001"
+	otherSession := "/sessions/10000000-0000-4000-8000-000000000002"
+	missingSession := "/sessions/10000000-0000-4000-8000-000000000099"
 	location := session + "/locations/20000000-0000-4000-8000-000000000001"
 	steps := session + "/steps/30000000-0000-4000-8000-000000000001"
+	var serverBefore time.Time
+	if err := pool.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&serverBefore); err != nil {
+		t.Fatal(err)
+	}
 	put(session, `{"start_datetime":"2026-01-01T10:00:20Z"}`, 204)
+	var sessionReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT received_at FROM walk_sessions WHERE id='10000000-0000-4000-8000-000000000001'`).Scan(&sessionReceived); err != nil {
+		t.Fatal(err)
+	}
 	put(session, `{"start_datetime":"2026-01-01T19:00:20+09:00"}`, 204)
+	var replayedSessionReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT received_at FROM walk_sessions WHERE id='10000000-0000-4000-8000-000000000001'`).Scan(&replayedSessionReceived); err != nil {
+		t.Fatal(err)
+	}
+	if !replayedSessionReceived.Equal(sessionReceived) {
+		t.Fatal("session replay changed received_at")
+	}
+	put(session, `{"start_datetime":"2026-01-01T10:00:21Z"}`, 409)
+	put(otherSession, `{"start_datetime":"2026-01-01T10:00:20Z"}`, 204)
 	put(location, `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.5,"longitude":139.5,"accuracy_m":3}`, 204)
+	var locationReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT received_at FROM location_events WHERE id='20000000-0000-4000-8000-000000000001'`).Scan(&locationReceived); err != nil {
+		t.Fatal(err)
+	}
 	put(location, `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.5,"longitude":139.5,"accuracy_m":3}`, 204)
+	var replayedLocationReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT received_at FROM location_events WHERE id='20000000-0000-4000-8000-000000000001'`).Scan(&replayedLocationReceived); err != nil {
+		t.Fatal(err)
+	}
+	if !replayedLocationReceived.Equal(locationReceived) {
+		t.Fatal("location replay changed received_at")
+	}
+	put(location, `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.6,"longitude":139.5,"accuracy_m":3}`, 409)
+	put(otherSession+"/locations/20000000-0000-4000-8000-000000000001", `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.5,"longitude":139.5,"accuracy_m":3}`, 409)
+	put(missingSession+"/locations/20000000-0000-4000-8000-000000000099", `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.5,"longitude":139.5,"accuracy_m":3}`, 404)
 	put(location, `{"recorded_at":"2026-01-01T10:00:30Z","latitude":91,"longitude":139.5,"accuracy_m":3}`, 400)
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":100,"revision":1}`, 204)
+	var firstReceived, initialLastReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT first_received_at, last_received_at FROM step_events WHERE id='30000000-0000-4000-8000-000000000001'`).Scan(&firstReceived, &initialLastReceived); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `SELECT pg_sleep(0.002)`); err != nil {
+		t.Fatal(err)
+	}
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":90,"revision":2}`, 204)
+	var correctedFirstReceived, correctedLastReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT first_received_at, last_received_at FROM step_events WHERE id='30000000-0000-4000-8000-000000000001'`).Scan(&correctedFirstReceived, &correctedLastReceived); err != nil {
+		t.Fatal(err)
+	}
+	if !correctedFirstReceived.Equal(firstReceived) || !correctedLastReceived.After(initialLastReceived) {
+		t.Fatal("step correction did not preserve first_received_at and advance last_received_at")
+	}
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":100,"revision":1}`, 204)
+	var staleFirstReceived, staleLastReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT first_received_at, last_received_at FROM step_events WHERE id='30000000-0000-4000-8000-000000000001'`).Scan(&staleFirstReceived, &staleLastReceived); err != nil {
+		t.Fatal(err)
+	}
+	if !staleFirstReceived.Equal(correctedFirstReceived) || !staleLastReceived.Equal(correctedLastReceived) {
+		t.Fatal("stale step replay changed receive timestamps")
+	}
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":80,"revision":2}`, 409)
 	var corrections sync.WaitGroup
 	correctionStatuses := make(chan int, 2)
+	startCorrections := make(chan struct{})
 	for _, body := range []string{
 		`{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":95,"revision":3}`,
 		`{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":98,"revision":4}`,
@@ -94,13 +156,18 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 		corrections.Add(1)
 		go func(body string) {
 			defer corrections.Done()
+			<-startCorrections
 			req := httptest.NewRequest(http.MethodPut, steps, strings.NewReader(body))
+			requestContext, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+			defer cancel()
+			req = req.WithContext(requestContext)
 			req.Header.Set("Content-Type", "application/json")
 			res := httptest.NewRecorder()
 			router.ServeHTTP(res, req)
 			correctionStatuses <- res.Code
 		}(body)
 	}
+	close(startCorrections)
 	corrections.Wait()
 	close(correctionStatuses)
 	for status := range correctionStatuses {
@@ -112,6 +179,8 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	put(session+"/steps/30000000-0000-4000-8000-000000000003", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":100,"revision":1}`, 409)
 	put(session+"/steps/30000000-0000-4000-8000-000000000004", `{"start_datetime":"2026-01-01T10:01:21Z","end_datetime":"2026-01-01T10:01:45Z","steps":1,"revision":1}`, 400)
 	put(session+"/steps/30000000-0000-4000-8000-000000000005", `{"start_datetime":"2026-01-01T10:02:20Z","end_datetime":"2026-01-01T10:03:20Z","revision":1}`, 400)
+	put(otherSession+"/steps/30000000-0000-4000-8000-000000000001", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":98,"revision":4}`, 409)
+	put(missingSession+"/steps/30000000-0000-4000-8000-000000000099", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":1,"revision":1}`, 404)
 	var count, srid int
 	var latitude, longitude float64
 	var recorded, received time.Time
@@ -140,5 +209,19 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("step count = %d", count)
+	}
+	var serverAfter time.Time
+	if err := pool.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&serverAfter); err != nil {
+		t.Fatal(err)
+	}
+	for name, receivedAt := range map[string]time.Time{
+		"session":    sessionReceived,
+		"location":   locationReceived,
+		"step first": firstReceived,
+		"step last":  correctedLastReceived,
+	} {
+		if receivedAt.Before(serverBefore) || receivedAt.After(serverAfter) {
+			t.Errorf("%s receive time %s is outside server request window [%s, %s]", name, receivedAt, serverBefore, serverAfter)
+		}
 	}
 }
