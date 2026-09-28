@@ -93,19 +93,13 @@ Goの単体テストで入力境界とエラー変換、PostGISを使うテス�
 
 ### 実PostGISテストを実行する
 
-通常の `task api:test` はDB接続を必要とするテストをスキップする。
-ローカル開発用PostGISを起動して、接続先を明示するとDBテストも実行できる。
+次のタスクは空きポートで使い捨てPostGISを起動し、マイグレーションとDBテストを
+実行した後にコンテナを削除する。ローカル開発用DBのデータには触れない。
 
 ```sh
-task db:up
-task db:migrate
-cd api
-TEST_DATABASE_URL='postgres://teku_dun:teku_dun@127.0.0.1:5432/teku_dun?sslmode=disable' \
-  go test -race ./internal/walk/... ./internal/httpapi
+task api:test-integration
 ```
 
-接続先には検証専用DBを使う。テストは専用スキーマを作成して削除するため、
-接続ユーザーにはその権限が必要。通常のアプリ用テーブルはテストで削除しない。
 `TestWalkHTTPPostGIS` は生成ルーターへJSONを送信し、レスポンスとDB行の両方を確認する。
 緯度・経度の保存順序、SRID、端末時刻と受信時刻、重複行が増えないこと、
 減少補正後に古い再送が届いても歩数が戻らないことを検証する。
