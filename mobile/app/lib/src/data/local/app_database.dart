@@ -2,8 +2,11 @@ import 'package:drift/drift.dart';
 
 part 'app_database.g.dart';
 
-/// The kind of sensor event a queued event carries.
+/// The kind of event a queued row carries.
 enum QueuedEventKind {
+  /// A walking session start; must reach the server before its events.
+  session,
+
   /// A single location fix.
   location,
 
@@ -23,11 +26,11 @@ enum QueuedEventStatus {
   sent,
 }
 
-/// Sensor events captured on-device, waiting to be sent to the server.
+/// Events captured on-device, waiting to be sent to the server.
 ///
-/// Rows are appended as sensors produce data and removed (or marked [sent])
-/// once the server has acknowledged them, so the table doubles as a
-/// durable retry queue across app restarts.
+/// Rows are appended as events are captured and marked [sent] once the
+/// server has acknowledged them, so the table doubles as a durable retry
+/// queue across app restarts.
 @TableIndex(
   name: 'queued_events_status_captured_at',
   columns: {#status, #capturedAt},
@@ -37,14 +40,26 @@ class QueuedEvents extends Table {
   /// keeps the same id across retries.
   TextColumn get id => text()();
 
-  /// The kind of sensor data carried by [payload].
+  /// UUID of the walking session this event belongs to. For a [kind] of
+  /// [QueuedEventKind.session], this is the same value as [id].
+  TextColumn get sessionId => text()();
+
+  /// The kind of event carried by [payload].
   TextColumn get kind => textEnum<QueuedEventKind>()();
 
-  /// When the sensor reading was captured, not when it was enqueued.
+  /// When the reading was captured: the session start time for
+  /// [QueuedEventKind.session], the fix time for [QueuedEventKind.location],
+  /// or the interval start time for [QueuedEventKind.steps].
   DateTimeColumn get capturedAt => dateTime()();
 
-  /// The event body, encoded as a JSON string.
+  /// The JSON that the API request body is built from; API-specific fields
+  /// live here rather than as their own columns.
   TextColumn get payload => text()();
+
+  /// Client-assigned revision, used so a steps event can be resent with the
+  /// same event id and still overwrite the server's copy. Always 1 for
+  /// session and location events.
+  IntColumn get revision => integer().withDefault(const Constant(1))();
 
   /// Current delivery state; see [QueuedEventStatus].
   TextColumn get status => textEnum<QueuedEventStatus>().withDefault(

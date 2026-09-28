@@ -18,6 +18,17 @@ class $QueuedEventsTable extends QueuedEvents
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
+    'session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   @override
   late final GeneratedColumnWithTypeConverter<QueuedEventKind, String> kind =
       GeneratedColumn<String>(
@@ -48,6 +59,18 @@ class $QueuedEventsTable extends QueuedEvents
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+  );
+  static const VerificationMeta _revisionMeta = const VerificationMeta(
+    'revision',
+  );
+  @override
+  late final GeneratedColumn<int> revision = GeneratedColumn<int>(
+    'revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
   );
   @override
   late final GeneratedColumnWithTypeConverter<QueuedEventStatus, String>
@@ -83,9 +106,11 @@ class $QueuedEventsTable extends QueuedEvents
   @override
   List<GeneratedColumn> get $columns => [
     id,
+    sessionId,
     kind,
     capturedAt,
     payload,
+    revision,
     status,
     createdAt,
     sentAt,
@@ -107,6 +132,14 @@ class $QueuedEventsTable extends QueuedEvents
     } else if (isInserting) {
       context.missing(_idMeta);
     }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sessionIdMeta);
+    }
     if (data.containsKey('captured_at')) {
       context.handle(
         _capturedAtMeta,
@@ -122,6 +155,12 @@ class $QueuedEventsTable extends QueuedEvents
       );
     } else if (isInserting) {
       context.missing(_payloadMeta);
+    }
+    if (data.containsKey('revision')) {
+      context.handle(
+        _revisionMeta,
+        revision.isAcceptableOrUnknown(data['revision']!, _revisionMeta),
+      );
     }
     if (data.containsKey('created_at')) {
       context.handle(
@@ -148,6 +187,10 @@ class $QueuedEventsTable extends QueuedEvents
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}session_id'],
+      )!,
       kind: $QueuedEventsTable.$converterkind.fromSql(
         attachedDatabase.typeMapping.read(
           DriftSqlType.string,
@@ -161,6 +204,10 @@ class $QueuedEventsTable extends QueuedEvents
       payload: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}payload'],
+      )!,
+      revision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}revision'],
       )!,
       status: $QueuedEventsTable.$converterstatus.fromSql(
         attachedDatabase.typeMapping.read(
@@ -197,14 +244,26 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   /// keeps the same id across retries.
   final String id;
 
-  /// The kind of sensor data carried by [payload].
+  /// UUID of the walking session this event belongs to. For a [kind] of
+  /// [QueuedEventKind.session], this is the same value as [id].
+  final String sessionId;
+
+  /// The kind of event carried by [payload].
   final QueuedEventKind kind;
 
-  /// When the sensor reading was captured, not when it was enqueued.
+  /// When the reading was captured: the session start time for
+  /// [QueuedEventKind.session], the fix time for [QueuedEventKind.location],
+  /// or the interval start time for [QueuedEventKind.steps].
   final DateTime capturedAt;
 
-  /// The event body, encoded as a JSON string.
+  /// The JSON that the API request body is built from; API-specific fields
+  /// live here rather than as their own columns.
   final String payload;
+
+  /// Client-assigned revision, used so a steps event can be resent with the
+  /// same event id and still overwrite the server's copy. Always 1 for
+  /// session and location events.
+  final int revision;
 
   /// Current delivery state; see [QueuedEventStatus].
   final QueuedEventStatus status;
@@ -216,9 +275,11 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   final DateTime? sentAt;
   const QueuedEvent({
     required this.id,
+    required this.sessionId,
     required this.kind,
     required this.capturedAt,
     required this.payload,
+    required this.revision,
     required this.status,
     required this.createdAt,
     this.sentAt,
@@ -227,6 +288,7 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
+    map['session_id'] = Variable<String>(sessionId);
     {
       map['kind'] = Variable<String>(
         $QueuedEventsTable.$converterkind.toSql(kind),
@@ -234,6 +296,7 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
     }
     map['captured_at'] = Variable<DateTime>(capturedAt);
     map['payload'] = Variable<String>(payload);
+    map['revision'] = Variable<int>(revision);
     {
       map['status'] = Variable<String>(
         $QueuedEventsTable.$converterstatus.toSql(status),
@@ -249,9 +312,11 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   QueuedEventsCompanion toCompanion(bool nullToAbsent) {
     return QueuedEventsCompanion(
       id: Value(id),
+      sessionId: Value(sessionId),
       kind: Value(kind),
       capturedAt: Value(capturedAt),
       payload: Value(payload),
+      revision: Value(revision),
       status: Value(status),
       createdAt: Value(createdAt),
       sentAt: sentAt == null && nullToAbsent
@@ -267,11 +332,13 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return QueuedEvent(
       id: serializer.fromJson<String>(json['id']),
+      sessionId: serializer.fromJson<String>(json['sessionId']),
       kind: $QueuedEventsTable.$converterkind.fromJson(
         serializer.fromJson<String>(json['kind']),
       ),
       capturedAt: serializer.fromJson<DateTime>(json['capturedAt']),
       payload: serializer.fromJson<String>(json['payload']),
+      revision: serializer.fromJson<int>(json['revision']),
       status: $QueuedEventsTable.$converterstatus.fromJson(
         serializer.fromJson<String>(json['status']),
       ),
@@ -284,11 +351,13 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
+      'sessionId': serializer.toJson<String>(sessionId),
       'kind': serializer.toJson<String>(
         $QueuedEventsTable.$converterkind.toJson(kind),
       ),
       'capturedAt': serializer.toJson<DateTime>(capturedAt),
       'payload': serializer.toJson<String>(payload),
+      'revision': serializer.toJson<int>(revision),
       'status': serializer.toJson<String>(
         $QueuedEventsTable.$converterstatus.toJson(status),
       ),
@@ -299,17 +368,21 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
 
   QueuedEvent copyWith({
     String? id,
+    String? sessionId,
     QueuedEventKind? kind,
     DateTime? capturedAt,
     String? payload,
+    int? revision,
     QueuedEventStatus? status,
     DateTime? createdAt,
     Value<DateTime?> sentAt = const Value.absent(),
   }) => QueuedEvent(
     id: id ?? this.id,
+    sessionId: sessionId ?? this.sessionId,
     kind: kind ?? this.kind,
     capturedAt: capturedAt ?? this.capturedAt,
     payload: payload ?? this.payload,
+    revision: revision ?? this.revision,
     status: status ?? this.status,
     createdAt: createdAt ?? this.createdAt,
     sentAt: sentAt.present ? sentAt.value : this.sentAt,
@@ -317,11 +390,13 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   QueuedEvent copyWithCompanion(QueuedEventsCompanion data) {
     return QueuedEvent(
       id: data.id.present ? data.id.value : this.id,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
       kind: data.kind.present ? data.kind.value : this.kind,
       capturedAt: data.capturedAt.present
           ? data.capturedAt.value
           : this.capturedAt,
       payload: data.payload.present ? data.payload.value : this.payload,
+      revision: data.revision.present ? data.revision.value : this.revision,
       status: data.status.present ? data.status.value : this.status,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       sentAt: data.sentAt.present ? data.sentAt.value : this.sentAt,
@@ -332,9 +407,11 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   String toString() {
     return (StringBuffer('QueuedEvent(')
           ..write('id: $id, ')
+          ..write('sessionId: $sessionId, ')
           ..write('kind: $kind, ')
           ..write('capturedAt: $capturedAt, ')
           ..write('payload: $payload, ')
+          ..write('revision: $revision, ')
           ..write('status: $status, ')
           ..write('createdAt: $createdAt, ')
           ..write('sentAt: $sentAt')
@@ -343,16 +420,27 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, kind, capturedAt, payload, status, createdAt, sentAt);
+  int get hashCode => Object.hash(
+    id,
+    sessionId,
+    kind,
+    capturedAt,
+    payload,
+    revision,
+    status,
+    createdAt,
+    sentAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is QueuedEvent &&
           other.id == this.id &&
+          other.sessionId == this.sessionId &&
           other.kind == this.kind &&
           other.capturedAt == this.capturedAt &&
           other.payload == this.payload &&
+          other.revision == this.revision &&
           other.status == this.status &&
           other.createdAt == this.createdAt &&
           other.sentAt == this.sentAt);
@@ -360,18 +448,22 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
 
 class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
   final Value<String> id;
+  final Value<String> sessionId;
   final Value<QueuedEventKind> kind;
   final Value<DateTime> capturedAt;
   final Value<String> payload;
+  final Value<int> revision;
   final Value<QueuedEventStatus> status;
   final Value<DateTime> createdAt;
   final Value<DateTime?> sentAt;
   final Value<int> rowid;
   const QueuedEventsCompanion({
     this.id = const Value.absent(),
+    this.sessionId = const Value.absent(),
     this.kind = const Value.absent(),
     this.capturedAt = const Value.absent(),
     this.payload = const Value.absent(),
+    this.revision = const Value.absent(),
     this.status = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.sentAt = const Value.absent(),
@@ -379,22 +471,27 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
   });
   QueuedEventsCompanion.insert({
     required String id,
+    required String sessionId,
     required QueuedEventKind kind,
     required DateTime capturedAt,
     required String payload,
+    this.revision = const Value.absent(),
     this.status = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.sentAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
+       sessionId = Value(sessionId),
        kind = Value(kind),
        capturedAt = Value(capturedAt),
        payload = Value(payload);
   static Insertable<QueuedEvent> custom({
     Expression<String>? id,
+    Expression<String>? sessionId,
     Expression<String>? kind,
     Expression<DateTime>? capturedAt,
     Expression<String>? payload,
+    Expression<int>? revision,
     Expression<String>? status,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? sentAt,
@@ -402,9 +499,11 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (sessionId != null) 'session_id': sessionId,
       if (kind != null) 'kind': kind,
       if (capturedAt != null) 'captured_at': capturedAt,
       if (payload != null) 'payload': payload,
+      if (revision != null) 'revision': revision,
       if (status != null) 'status': status,
       if (createdAt != null) 'created_at': createdAt,
       if (sentAt != null) 'sent_at': sentAt,
@@ -414,9 +513,11 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
 
   QueuedEventsCompanion copyWith({
     Value<String>? id,
+    Value<String>? sessionId,
     Value<QueuedEventKind>? kind,
     Value<DateTime>? capturedAt,
     Value<String>? payload,
+    Value<int>? revision,
     Value<QueuedEventStatus>? status,
     Value<DateTime>? createdAt,
     Value<DateTime?>? sentAt,
@@ -424,9 +525,11 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
   }) {
     return QueuedEventsCompanion(
       id: id ?? this.id,
+      sessionId: sessionId ?? this.sessionId,
       kind: kind ?? this.kind,
       capturedAt: capturedAt ?? this.capturedAt,
       payload: payload ?? this.payload,
+      revision: revision ?? this.revision,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       sentAt: sentAt ?? this.sentAt,
@@ -440,6 +543,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
     if (id.present) {
       map['id'] = Variable<String>(id.value);
     }
+    if (sessionId.present) {
+      map['session_id'] = Variable<String>(sessionId.value);
+    }
     if (kind.present) {
       map['kind'] = Variable<String>(
         $QueuedEventsTable.$converterkind.toSql(kind.value),
@@ -450,6 +556,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
     }
     if (payload.present) {
       map['payload'] = Variable<String>(payload.value);
+    }
+    if (revision.present) {
+      map['revision'] = Variable<int>(revision.value);
     }
     if (status.present) {
       map['status'] = Variable<String>(
@@ -472,9 +581,11 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
   String toString() {
     return (StringBuffer('QueuedEventsCompanion(')
           ..write('id: $id, ')
+          ..write('sessionId: $sessionId, ')
           ..write('kind: $kind, ')
           ..write('capturedAt: $capturedAt, ')
           ..write('payload: $payload, ')
+          ..write('revision: $revision, ')
           ..write('status: $status, ')
           ..write('createdAt: $createdAt, ')
           ..write('sentAt: $sentAt, ')
@@ -508,9 +619,11 @@ abstract class _$AppDatabase extends GeneratedDatabase {
 typedef $$QueuedEventsTableCreateCompanionBuilder =
     QueuedEventsCompanion Function({
       required String id,
+      required String sessionId,
       required QueuedEventKind kind,
       required DateTime capturedAt,
       required String payload,
+      Value<int> revision,
       Value<QueuedEventStatus> status,
       Value<DateTime> createdAt,
       Value<DateTime?> sentAt,
@@ -519,9 +632,11 @@ typedef $$QueuedEventsTableCreateCompanionBuilder =
 typedef $$QueuedEventsTableUpdateCompanionBuilder =
     QueuedEventsCompanion Function({
       Value<String> id,
+      Value<String> sessionId,
       Value<QueuedEventKind> kind,
       Value<DateTime> capturedAt,
       Value<String> payload,
+      Value<int> revision,
       Value<QueuedEventStatus> status,
       Value<DateTime> createdAt,
       Value<DateTime?> sentAt,
@@ -542,6 +657,11 @@ class $$QueuedEventsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnWithTypeConverterFilters<QueuedEventKind, QueuedEventKind, String>
   get kind => $composableBuilder(
     column: $table.kind,
@@ -555,6 +675,11 @@ class $$QueuedEventsTableFilterComposer
 
   ColumnFilters<String> get payload => $composableBuilder(
     column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get revision => $composableBuilder(
+    column: $table.revision,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -589,6 +714,11 @@ class $$QueuedEventsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get kind => $composableBuilder(
     column: $table.kind,
     builder: (column) => ColumnOrderings(column),
@@ -601,6 +731,11 @@ class $$QueuedEventsTableOrderingComposer
 
   ColumnOrderings<String> get payload => $composableBuilder(
     column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get revision => $composableBuilder(
+    column: $table.revision,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -632,6 +767,9 @@ class $$QueuedEventsTableAnnotationComposer
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
+  GeneratedColumn<String> get sessionId =>
+      $composableBuilder(column: $table.sessionId, builder: (column) => column);
+
   GeneratedColumnWithTypeConverter<QueuedEventKind, String> get kind =>
       $composableBuilder(column: $table.kind, builder: (column) => column);
 
@@ -642,6 +780,9 @@ class $$QueuedEventsTableAnnotationComposer
 
   GeneratedColumn<String> get payload =>
       $composableBuilder(column: $table.payload, builder: (column) => column);
+
+  GeneratedColumn<int> get revision =>
+      $composableBuilder(column: $table.revision, builder: (column) => column);
 
   GeneratedColumnWithTypeConverter<QueuedEventStatus, String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
@@ -685,18 +826,22 @@ class $$QueuedEventsTableTableManager
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
+                Value<String> sessionId = const Value.absent(),
                 Value<QueuedEventKind> kind = const Value.absent(),
                 Value<DateTime> capturedAt = const Value.absent(),
                 Value<String> payload = const Value.absent(),
+                Value<int> revision = const Value.absent(),
                 Value<QueuedEventStatus> status = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> sentAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => QueuedEventsCompanion(
                 id: id,
+                sessionId: sessionId,
                 kind: kind,
                 capturedAt: capturedAt,
                 payload: payload,
+                revision: revision,
                 status: status,
                 createdAt: createdAt,
                 sentAt: sentAt,
@@ -705,18 +850,22 @@ class $$QueuedEventsTableTableManager
           createCompanionCallback:
               ({
                 required String id,
+                required String sessionId,
                 required QueuedEventKind kind,
                 required DateTime capturedAt,
                 required String payload,
+                Value<int> revision = const Value.absent(),
                 Value<QueuedEventStatus> status = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> sentAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => QueuedEventsCompanion.insert(
                 id: id,
+                sessionId: sessionId,
                 kind: kind,
                 capturedAt: capturedAt,
                 payload: payload,
+                revision: revision,
                 status: status,
                 createdAt: createdAt,
                 sentAt: sentAt,
