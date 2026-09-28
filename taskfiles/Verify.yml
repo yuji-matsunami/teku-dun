@@ -14,6 +14,7 @@ tasks:
     cmds:
       - task: openapi:validate
       - task: openapi:lint
+      - task: db:generate-check
       - task: api:verify
       - task: dart:verify
       - task: flutter:verify

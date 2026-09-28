@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk"
 )
@@ -52,8 +53,16 @@ func (s *walkHTTPTestService) calls() int {
 	return s.sessionCalls + s.locationCalls + s.stepsCalls
 }
 
-func newWalkTestRouter(service WalkService) http.Handler {
-	return openapi.Handler(NewHandler(nil, time.Second).WithWalkService(service))
+func newWalkTestRouter(t *testing.T, service WalkService) http.Handler {
+	t.Helper()
+	validator, err := NewOpenAPIRequestValidator()
+	if err != nil {
+		t.Fatalf("create request validator: %v", err)
+	}
+	router := chi.NewRouter()
+	router.Use(ValidateRequestBody, validator)
+	openapi.HandlerFromMux(NewHandler(nil, time.Second).WithWalkService(service), router)
+	return router
 }
 
 func putWalkTestRequest(router http.Handler, path, body, contentType string) *httptest.ResponseRecorder {
@@ -68,7 +77,7 @@ func putWalkTestRequest(router http.Handler, path, body, contentType string) *ht
 
 func TestWalkHTTPAcceptsSessionLocationAndSteps(t *testing.T) {
 	service := &walkHTTPTestService{}
-	router := newWalkTestRouter(service)
+	router := newWalkTestRouter(t, service)
 
 	tests := []struct {
 		name string
@@ -219,7 +228,7 @@ func TestWalkHTTPRejectsInvalidRequests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			service := &walkHTTPTestService{}
-			response := putWalkTestRequest(newWalkTestRouter(service), tt.path, tt.body, tt.contentType)
+			response := putWalkTestRequest(newWalkTestRouter(t, service), tt.path, tt.body, tt.contentType)
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status = %d, body = %q, want %d", response.Code, response.Body.String(), tt.wantStatus)
 			}
@@ -267,7 +276,7 @@ func TestWalkHTTPMapsDomainErrorsAndHidesStorageDetails(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			service := &walkHTTPTestService{sessionErr: tt.serviceErr}
-			response := putWalkTestRequest(newWalkTestRouter(service), "/sessions/"+httpTestSessionID, `{"start_datetime":"2026-01-01T10:00:00Z"}`, "application/json")
+			response := putWalkTestRequest(newWalkTestRouter(t, service), "/sessions/"+httpTestSessionID, `{"start_datetime":"2026-01-01T10:00:00Z"}`, "application/json")
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status = %d, body = %q, want %d", response.Code, response.Body.String(), tt.wantStatus)
 			}
