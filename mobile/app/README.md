@@ -21,3 +21,12 @@ task flutter:run
 実機から接続する場合は、開発マシンの LAN アドレスなど、端末から到達可能な
 URL を指定してください。平文 HTTP はデバッグビルドの Android 設定でのみ
 許可し、リリースビルドでは HTTPS を使用します。
+
+## Drift のスキーマ変更
+
+`lib/src/data/local/app_database.dart` のテーブル定義を変更したら、生成コード
+（`app_database.g.dart`）を再生成し、差分をコミットしてください。
+
+```sh
+fvm flutter pub run build_runner build --delete-conflicting-outputs
+```
