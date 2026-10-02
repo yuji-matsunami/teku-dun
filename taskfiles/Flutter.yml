@@ -14,6 +14,37 @@ tasks:
     cmds:
       - '{{.FLUTTER}} pub get'
 
+  build:
+    desc: Drift の生成コードを生成する
+    cmds:
+      - task: pub-get
+      - task: build-runner
+
+  build-runner:
+    internal: true
+    dir: '{{.ROOT_DIR}}/{{.FLUTTER_APP_DIR}}'
+    cmds:
+      - '{{.FLUTTER}} pub run build_runner build --delete-conflicting-outputs'
+
+  build-check-only:
+    internal: true
+    dir: '{{.ROOT_DIR}}/{{.FLUTTER_APP_DIR}}'
+    cmds:
+      - |
+        set -eu
+        changed="$(git diff --name-only -- '*.g.dart')"
+        if [ -n "$changed" ]; then
+          echo 'Generated Dart files changed after build_runner:' >&2
+          echo "$changed" >&2
+          exit 1
+        fi
+        untracked="$(git ls-files --others --exclude-standard -- '*.g.dart')"
+        if [ -n "$untracked" ]; then
+          echo 'Generated Dart files are untracked; stage the build_runner output:' >&2
+          echo "$untracked" >&2
+          exit 1
+        fi
+
   analyze:
     desc: Flutterアプリを静的解析する
     cmds:
@@ -48,8 +79,10 @@ tasks:
       - '{{.FLUTTER}} run --dart-define=API_BASE_URL="$API_BASE_URL"'
 
   verify:
-    desc: Flutterアプリの静的解析とテストをまとめて実行する
+    desc: Flutterアプリの生成物・静的解析・テストをまとめて実行する
     cmds:
       - task: pub-get
+      - task: build-runner
+      - task: build-check-only
       - task: analyze-only
       - task: test-only

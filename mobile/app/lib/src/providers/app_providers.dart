@@ -1,11 +1,19 @@
+import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:teku_dun_api_client/teku_dun_api_client.dart';
 
 import '../config/app_config.dart';
+import '../data/local/app_database.dart';
 import '../gateway/health_gateway.dart';
 
 final appConfigProvider = Provider<AppConfig>((ref) {
   return AppConfig.fromEnvironment();
+});
+
+final appDatabaseProvider = Provider<AppDatabase>((ref) {
+  final db = AppDatabase(driftDatabase(name: 'teku_dun'));
+  ref.onDispose(db.close);
+  return db;
 });
 
 final apiClientProvider = Provider<TekuDunApiClient>((ref) {
