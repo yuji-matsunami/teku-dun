@@ -1,15 +1,15 @@
-// Package walk contains the walk event domain model and use cases.
+// Package walkは、散歩イベントのドメインモデルとユースケースを提供する。
 package walk
 
 import "time"
 
-// Session identifies one walk and its start instant.
+// Sessionは、1回の散歩とその開始時刻を表す。
 type Session struct {
 	ID            string
 	StartDatetime time.Time
 }
 
-// Location is a location sample recorded during a session.
+// Locationは、散歩中に記録した1件の位置情報を表す。
 type Location struct {
 	ID         string
 	SessionID  string
@@ -19,7 +19,7 @@ type Location struct {
 	AccuracyM  float64
 }
 
-// Steps is the step count for one fixed interval in a session.
+// Stepsは、散歩中の1つの固定区間における歩数を表す。
 type Steps struct {
 	ID            string
 	SessionID     string
