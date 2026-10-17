@@ -117,9 +117,13 @@ func normalizeAndValidateTime(value, now time.Time) (time.Time, bool) {
 }
 
 func validCoordinate(latitude, longitude, accuracy float64) bool {
-	return !math.IsNaN(latitude) && !math.IsInf(latitude, 0) && latitude >= -90 && latitude <= 90 &&
-		!math.IsNaN(longitude) && !math.IsInf(longitude, 0) && longitude >= -180 && longitude <= 180 &&
-		!math.IsNaN(accuracy) && !math.IsInf(accuracy, 0) && accuracy >= 0
+	return isFinite(latitude) && latitude >= -90 && latitude <= 90 &&
+		isFinite(longitude) && longitude >= -180 && longitude <= 180 &&
+		isFinite(accuracy) && accuracy >= 0
+}
+
+func isFinite(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0)
 }
 
 func validUUID(value string) bool {
