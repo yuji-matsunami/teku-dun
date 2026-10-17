@@ -2,9 +2,9 @@ package walk
 
 import "context"
 
-// Repositoryは、散歩イベントを永続化する。
-// 実装は、各操作の冪等性と競合処理を保証する必要がある。
-type Repository interface {
+// WalkRepositoryは、散歩データを冪等に永続化する。
+// 同一データの再送を許可し、同じIDが異なるデータに使用された場合はErrConflictを返す。
+type WalkRepository interface {
 	PutSession(context.Context, Session) error
 	PutLocation(context.Context, Location) error
 	PutSteps(context.Context, Steps) error

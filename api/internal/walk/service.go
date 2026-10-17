@@ -19,14 +19,14 @@ var (
 	ErrConflict = errors.New("walk event conflict")
 )
 
-// Serviceは、Repositoryへ渡す前に散歩イベントを検証する。
+// Serviceは、WalkRepositoryへ渡す前に散歩イベントを検証する。
 type Service struct {
-	repo Repository
+	repo WalkRepository
 	now  func() time.Time
 }
 
 // NewServiceは、散歩イベントを扱うServiceを生成する。
-func NewService(repo Repository) *Service {
+func NewService(repo WalkRepository) *Service {
 	return &Service{repo: repo, now: time.Now}
 }
 
