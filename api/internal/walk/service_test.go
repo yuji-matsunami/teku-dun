@@ -433,6 +433,104 @@ func TestServicePropagatesRepositoryError(t *testing.T) {
 	}
 }
 
+func TestNormalizeAndValidateTime(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 10, 0, 0, 0, time.UTC)
+	offsetWithSeconds := time.FixedZone("offset-with-seconds", 9*60*60+30)
+
+	tests := []struct {
+		name  string
+		value time.Time
+		now   time.Time
+		want  time.Time
+		ok    bool
+	}{
+		{
+			name:  "timezone is converted to UTC and nanoseconds are truncated",
+			value: time.Date(2026, time.January, 1, 19, 0, 0, 123456789, time.FixedZone("JST", 9*60*60)),
+			now:   now,
+			want:  time.Date(2026, time.January, 1, 10, 0, 0, 123456000, time.UTC),
+			ok:    true,
+		},
+		{
+			name:  "past time is accepted",
+			value: now.Add(-24 * time.Hour),
+			now:   now,
+			want:  now.Add(-24 * time.Hour),
+			ok:    true,
+		},
+		{
+			name:  "future boundary is accepted",
+			value: now.Add(5 * time.Minute),
+			now:   now,
+			want:  now.Add(5 * time.Minute),
+			ok:    true,
+		},
+		{
+			name:  "sub-microsecond beyond future boundary is truncated and accepted",
+			value: now.Add(5*time.Minute + 999*time.Nanosecond),
+			now:   now,
+			want:  now.Add(5 * time.Minute),
+			ok:    true,
+		},
+		{
+			name:  "one microsecond beyond future boundary is rejected",
+			value: now.Add(5*time.Minute + time.Microsecond),
+			now:   now,
+		},
+		{
+			name:  "non-zero time in year one is accepted",
+			value: time.Date(1, time.January, 2, 0, 0, 0, 0, time.UTC),
+			now:   now,
+			want:  time.Date(1, time.January, 2, 0, 0, 0, 0, time.UTC),
+			ok:    true,
+		},
+		{
+			name:  "maximum RFC3339 year is accepted",
+			value: time.Date(9999, time.January, 1, 0, 0, 0, 0, time.UTC),
+			now:   time.Date(9999, time.January, 1, 0, 0, 0, 0, time.UTC),
+			want:  time.Date(9999, time.January, 1, 0, 0, 0, 0, time.UTC),
+			ok:    true,
+		},
+		{
+			name: "zero time is rejected",
+			now:  now,
+		},
+		{
+			name:  "year zero is rejected",
+			value: time.Date(0, time.January, 1, 0, 0, 0, 0, time.UTC),
+			now:   now,
+		},
+		{
+			name:  "year ten thousand is rejected",
+			value: time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC),
+			now:   now,
+		},
+		{
+			name:  "timezone offset with seconds is rejected",
+			value: time.Date(2026, time.January, 1, 19, 0, 0, 0, offsetWithSeconds),
+			now:   now,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := normalizeAndValidateTime(tt.value, tt.now)
+			if ok != tt.ok {
+				t.Fatalf("ok = %t, want %t", ok, tt.ok)
+			}
+			if !tt.ok {
+				if !got.IsZero() {
+					t.Fatalf("time = %s, want zero value", got)
+				}
+				return
+			}
+			if !got.Equal(tt.want) || got.Location() != time.UTC {
+				t.Fatalf("time = %s (%s), want %s (UTC)", got, got.Location(), tt.want)
+			}
+		})
+	}
+}
+
 func TestValidUUID(t *testing.T) {
 	tests := []struct {
 		name  string
