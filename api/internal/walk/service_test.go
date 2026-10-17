@@ -432,3 +432,27 @@ func TestServicePropagatesRepositoryError(t *testing.T) {
 		t.Fatalf("error = %v, want %v", err, wantErr)
 	}
 }
+
+func TestValidUUID(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "canonical lowercase", value: "10000000-0000-4000-8000-000000000001", want: true},
+		{name: "canonical uppercase", value: "A0000000-0000-4000-8000-000000000001", want: true},
+		{name: "nil UUID", value: "00000000-0000-0000-0000-000000000000", want: false},
+		{name: "compact form", value: "10000000000040008000000000000001", want: false},
+		{name: "braced form", value: "{10000000-0000-4000-8000-000000000001}", want: false},
+		{name: "URN form", value: "urn:uuid:10000000-0000-4000-8000-000000000001", want: false},
+		{name: "invalid text", value: "not-a-uuid", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validUUID(tt.value); got != tt.want {
+				t.Fatalf("validUUID(%q) = %t, want %t", tt.value, got, tt.want)
+			}
+		})
+	}
+}
