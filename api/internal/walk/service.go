@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -120,26 +123,6 @@ func validCoordinate(latitude, longitude, accuracy float64) bool {
 }
 
 func validUUID(value string) bool {
-	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
-		return false
-	}
-	allZero := true
-	for i := range value {
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			continue
-		}
-		c := value[i]
-		if !isHex(c) {
-			return false
-		}
-		if c != '0' {
-			allZero = false
-		}
-	}
-	// 全桁0のUUIDは、この境界では未指定値として予約する。
-	return !allZero
-}
-
-func isHex(value byte) bool {
-	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f' || value >= 'A' && value <= 'F'
+	id, err := uuid.Parse(value)
+	return err == nil && id != uuid.Nil && strings.EqualFold(id.String(), value)
 }
