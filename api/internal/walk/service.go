@@ -8,26 +8,26 @@ import (
 )
 
 var (
-	// ErrInvalid means that an event violates the walk input rules.
+	// ErrInvalidは、イベントが散歩記録の入力規則に違反していることを表す。
 	ErrInvalid = errors.New("invalid walk event")
-	// ErrNotFound means that the event refers to a session that is not stored.
+	// ErrNotFoundは、イベントが未保存のセッションを参照していることを表す。
 	ErrNotFound = errors.New("walk session not found")
-	// ErrConflict means that an idempotency key was reused with different data.
+	// ErrConflictは、同じ冪等性キーが異なるデータで再利用されたことを表す。
 	ErrConflict = errors.New("walk event conflict")
 )
 
-// Service validates walk events before handing them to a Repository.
+// Serviceは、Repositoryへ渡す前に散歩イベントを検証する。
 type Service struct {
 	repo Repository
 	now  func() time.Time
 }
 
-// NewService constructs a walk service.
+// NewServiceは、散歩イベントを扱うServiceを生成する。
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo, now: time.Now}
 }
 
-// PutSession validates and persists a session.
+// PutSessionは、散歩セッションを検証して永続化する。
 func (s *Service) PutSession(ctx context.Context, session Session) error {
 	if s == nil || s.repo == nil {
 		return ErrInvalid
@@ -44,7 +44,7 @@ func (s *Service) PutSession(ctx context.Context, session Session) error {
 	return s.repo.PutSession(ctx, session)
 }
 
-// PutLocation validates and persists a location sample.
+// PutLocationは、位置情報を検証して永続化する。
 func (s *Service) PutLocation(ctx context.Context, location Location) error {
 	if s == nil || s.repo == nil {
 		return ErrInvalid
@@ -62,7 +62,7 @@ func (s *Service) PutLocation(ctx context.Context, location Location) error {
 	return s.repo.PutLocation(ctx, location)
 }
 
-// PutSteps validates and persists one fixed step interval.
+// PutStepsは、1つの固定区間の歩数を検証して永続化する。
 func (s *Service) PutSteps(ctx context.Context, steps Steps) error {
 	if s == nil || s.repo == nil {
 		return ErrInvalid
@@ -99,8 +99,8 @@ func normalizeAndValidateTime(value, now time.Time) (time.Time, bool) {
 	if value.IsZero() || value.Year() < 1 || value.Year() > 9999 {
 		return time.Time{}, false
 	}
-	// Formatting and parsing through RFC3339Nano rejects years and offsets that
-	// cannot be represented by the wire contract. It also drops monotonic data.
+	// RFC3339Nanoによる文字列化と再解析で、通信契約に表現できない年や
+	// タイムゾーンオフセットを拒否し、単調時計の情報も取り除く。
 	encoded := value.Format(time.RFC3339Nano)
 	parsed, err := time.Parse(time.RFC3339Nano, encoded)
 	if err != nil || !parsed.Equal(value) {
@@ -136,7 +136,7 @@ func validUUID(value string) bool {
 			allZero = false
 		}
 	}
-	// The all-zero UUID is reserved as a missing value at this boundary.
+	// 全桁0のUUIDは、この境界では未指定値として予約する。
 	return !allZero
 }
 
