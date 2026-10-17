@@ -1,4 +1,4 @@
-// Package postgres implements walk.Repository with PostgreSQL and PostGIS.
+// Package postgresは、PostgreSQLとPostGISを使ってwalk.WalkRepositoryを実装する。
 package postgres
 
 import (
@@ -24,7 +24,7 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
-var _ walk.Repository = (*Repository)(nil)
+var _ walk.WalkRepository = (*Repository)(nil)
 
 // PutSession inserts a session or verifies an idempotent retry.
 func (r *Repository) PutSession(ctx context.Context, session walk.Session) error {
