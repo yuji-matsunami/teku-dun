@@ -19,7 +19,7 @@ import (
 	walkpostgres "github.com/yuji-matsunami/teku-dun/api/internal/walk/postgres"
 )
 
-// Each test owns its schema; TEST_DATABASE_URL must point to a disposable PostGIS database.
+// 各テスト専用のスキーマを使う。TEST_DATABASE_URLには破棄可能なPostGISデータベースを指定する。
 func TestWalkHTTPPostGIS(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -45,6 +45,8 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 		t.Fatal("invalid TEST_DATABASE_URL")
 	}
 	cfg.ConnConfig.RuntimeParams["search_path"] = schema + ",public"
+	applicationName := schema + "_http_api"
+	cfg.ConnConfig.RuntimeParams["application_name"] = applicationName
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		t.Fatal("cannot create isolated test pool")
@@ -114,6 +116,7 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	put(otherSession+"/locations/20000000-0000-4000-8000-000000000001", `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.5,"longitude":139.5,"accuracy_m":3}`, 409)
 	put(missingSession+"/locations/20000000-0000-4000-8000-000000000099", `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.5,"longitude":139.5,"accuracy_m":3}`, 404)
 	put(location, `{"recorded_at":"2026-01-01T10:00:30Z","latitude":91,"longitude":139.5,"accuracy_m":3}`, 400)
+	put(session+"/locations/20000000-0000-4000-8000-000000000002", `{"recorded_at":"2026-01-01T10:00:19Z","latitude":35.5,"longitude":139.5,"accuracy_m":3}`, 400)
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":100,"revision":1}`, 204)
 	var firstReceived, initialLastReceived time.Time
 	if err := pool.QueryRow(ctx, `SELECT first_received_at, last_received_at FROM step_events WHERE id='30000000-0000-4000-8000-000000000001'`).Scan(&firstReceived, &initialLastReceived); err != nil {
@@ -172,8 +175,27 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	put(session+"/steps/30000000-0000-4000-8000-000000000003", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":100,"revision":1}`, 409)
 	put(session+"/steps/30000000-0000-4000-8000-000000000004", `{"start_datetime":"2026-01-01T10:01:21Z","end_datetime":"2026-01-01T10:01:45Z","steps":1,"revision":1}`, 400)
 	put(session+"/steps/30000000-0000-4000-8000-000000000005", `{"start_datetime":"2026-01-01T10:02:20Z","end_datetime":"2026-01-01T10:03:20Z","revision":1}`, 400)
+	put(session+"/steps/30000000-0000-4000-8000-000000000007", `{"start_datetime":"2026-01-01T10:00:19Z","end_datetime":"2026-01-01T10:01:19Z","steps":1,"revision":1}`, 400)
 	put(otherSession+"/steps/30000000-0000-4000-8000-000000000001", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":98,"revision":4}`, 409)
 	put(missingSession+"/steps/30000000-0000-4000-8000-000000000099", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":1,"revision":1}`, 404)
+	assertConcurrentInitialStepPut(t, ctx, admin, pool, router, applicationName,
+		session+"/steps/30000000-0000-4000-8000-000000000006",
+		`{"start_datetime":"2026-01-01T10:04:20Z","end_datetime":"2026-01-01T10:05:20Z","steps":42,"revision":1}`)
+	var simultaneousCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM step_events WHERE id='30000000-0000-4000-8000-000000000006'`).Scan(&simultaneousCount); err != nil {
+		t.Fatal(err)
+	}
+	if simultaneousCount != 1 {
+		t.Fatalf("simultaneous initial step row count = %d, want 1", simultaneousCount)
+	}
+	var simultaneousSteps int32
+	var simultaneousRevision int64
+	if err := pool.QueryRow(ctx, `SELECT steps, revision FROM step_events WHERE id='30000000-0000-4000-8000-000000000006'`).Scan(&simultaneousSteps, &simultaneousRevision); err != nil {
+		t.Fatal(err)
+	}
+	if simultaneousSteps != 42 || simultaneousRevision != 1 {
+		t.Fatalf("simultaneous initial step = steps %d, revision %d; want 42, 1", simultaneousSteps, simultaneousRevision)
+	}
 	var count, srid int
 	var latitude, longitude float64
 	var recorded, received time.Time
@@ -200,8 +222,8 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM step_events`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Fatalf("step count = %d", count)
+	if count != 3 {
+		t.Fatalf("step count = %d, want 3", count)
 	}
 	var serverAfter time.Time
 	if err := pool.QueryRow(ctx, `SELECT clock_timestamp()`).Scan(&serverAfter); err != nil {
@@ -215,6 +237,115 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	} {
 		if receivedAt.Before(serverBefore) || receivedAt.After(serverAfter) {
 			t.Errorf("%s receive time %s is outside server request window [%s, %s]", name, receivedAt, serverBefore, serverAfter)
+		}
+	}
+}
+
+func assertConcurrentInitialStepPut(
+	t *testing.T,
+	ctx context.Context,
+	admin, pool *pgxpool.Pool,
+	router http.Handler,
+	applicationName, path, body string,
+) {
+	t.Helper()
+
+	lockTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockHeld := true
+	requestCtx, cancelRequests := context.WithTimeout(ctx, 10*time.Second)
+	var requestsStarted bool
+	requestsDone := make(chan struct{})
+	defer func() {
+		if lockHeld {
+			_ = lockTx.Rollback(context.Background())
+		}
+		cancelRequests()
+		if requestsStarted {
+			select {
+			case <-requestsDone:
+			case <-time.After(5 * time.Second):
+				t.Error("concurrent step requests did not stop after lock release and cancellation")
+			}
+		}
+	}()
+	if _, err := lockTx.Exec(ctx, `LOCK TABLE step_events IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+
+	startRequests := make(chan struct{})
+	statuses := make(chan int, 2)
+	var requests sync.WaitGroup
+	for range 2 {
+		requests.Add(1)
+		go func() {
+			defer requests.Done()
+			<-startRequests
+			req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body)).WithContext(requestCtx)
+			req.Header.Set("Content-Type", "application/json")
+			res := httptest.NewRecorder()
+			router.ServeHTTP(res, req)
+			statuses <- res.Code
+		}()
+	}
+	requestsStarted = true
+	go func() {
+		requests.Wait()
+		close(requestsDone)
+	}()
+	close(startRequests)
+
+	pollCtx, cancelPoll := context.WithTimeout(requestCtx, 8*time.Second)
+	err = waitForBlockedStepInserts(pollCtx, admin, applicationName)
+	cancelPoll()
+	if err != nil {
+		t.Fatalf("waiting for both step inserts to block: %v", err)
+	}
+	if err := lockTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lockHeld = false
+
+	for range 2 {
+		select {
+		case status := <-statuses:
+			if status != http.StatusNoContent {
+				t.Fatalf("concurrent initial step status = %d, want %d", status, http.StatusNoContent)
+			}
+		case <-requestCtx.Done():
+			t.Fatalf("waiting for concurrent step responses: %v", requestCtx.Err())
+		}
+	}
+	select {
+	case <-requestsDone:
+	case <-requestCtx.Done():
+		t.Fatalf("waiting for concurrent step requests to finish: %v", requestCtx.Err())
+	}
+}
+
+func waitForBlockedStepInserts(ctx context.Context, admin *pgxpool.Pool, applicationName string) error {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var blocked int
+		if err := admin.QueryRow(ctx, `
+			SELECT count(*)
+			FROM pg_stat_activity
+			WHERE application_name = $1
+			  AND wait_event_type = 'Lock'
+			  AND query ILIKE '%INSERT INTO step_events%'
+		`, applicationName).Scan(&blocked); err != nil {
+			return err
+		}
+		if blocked == 2 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for two blocked INSERTs; found %d: %w", blocked, ctx.Err())
+		case <-ticker.C:
 		}
 	}
 }
