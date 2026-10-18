@@ -11,7 +11,8 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(HealthResponse.serializer)
       ..add(HealthResponseStatusEnum.serializer)
       ..add(ReadyResponse.serializer)
-      ..add(ReadyResponseStatusEnum.serializer))
+      ..add(ReadyResponseStatusEnum.serializer)
+      ..add(SessionRequest.serializer))
     .build();
 
 // ignore_for_file: deprecated_member_use_from_same_package,type=lint
