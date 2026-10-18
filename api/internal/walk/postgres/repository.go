@@ -14,19 +14,19 @@ import (
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk/postgres/sqlc"
 )
 
-// Repository stores walk events in PostgreSQL.
+// Repositoryは、散歩イベントをPostgreSQLに保存する。
 type Repository struct {
 	pool *pgxpool.Pool
 }
 
-// NewRepository constructs a PostgreSQL walk repository.
+// NewRepositoryは、PostgreSQLを使用する散歩リポジトリを生成する。
 func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
 var _ walk.WalkRepository = (*Repository)(nil)
 
-// PutSession inserts a session or verifies an idempotent retry.
+// PutSessionは、セッションを保存する。同じ内容の再送は成功として扱う。
 func (r *Repository) PutSession(ctx context.Context, session walk.Session) error {
 	if r == nil || r.pool == nil {
 		return walk.ErrInvalid
@@ -55,7 +55,7 @@ func (r *Repository) PutSession(ctx context.Context, session walk.Session) error
 	return tx.Commit(ctx)
 }
 
-// PutLocation inserts a location or verifies an idempotent retry.
+// PutLocationは、位置情報を保存する。同じ内容の再送は成功として扱う。
 func (r *Repository) PutLocation(ctx context.Context, location walk.Location) error {
 	if r == nil || r.pool == nil {
 		return walk.ErrInvalid
@@ -106,7 +106,7 @@ func (r *Repository) PutLocation(ctx context.Context, location walk.Location) er
 	return tx.Commit(ctx)
 }
 
-// PutSteps inserts a fixed interval or applies a newer revision.
+// PutStepsは、固定区間の歩数を保存し、より新しいリビジョンで更新する。
 func (r *Repository) PutSteps(ctx context.Context, steps walk.Steps) error {
 	if r == nil || r.pool == nil {
 		return walk.ErrInvalid
@@ -167,8 +167,8 @@ func (r *Repository) PutSteps(ctx context.Context, steps walk.Steps) error {
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	// A UUID cannot move to another interval. Check it before inserting so that
-	// the constraint is reported as the domain conflict below.
+	// UUIDを別の区間へ移すことはできない。
+	// 挿入前に確認し、制約違反をドメイン上の競合として返す。
 	byID, err := queries.GetStepsByIDForUpdate(ctx, id)
 	if err == nil {
 		if !sameUUID(byID.SessionID, sessionID) || !sameTimestamp(byID.StartDatetime, start) || !sameTimestamp(byID.EndDatetime, end) {
@@ -219,8 +219,8 @@ func sameTimestamp(stored pgtype.Timestamptz, value time.Time) bool {
 }
 
 func wholeMinutesFrom(start, value time.Time) bool {
-	// UnixMicro keeps the calculation bounded for the RFC3339 year range,
-	// unlike time.Duration, which saturates after roughly 290 years.
+	// time.Durationは約290年を超えると上限値になるため、
+	// RFC 3339が扱う年の範囲でも計算できるUnixMicroを使用する。
 	delta := value.UnixMicro() - start.UnixMicro()
 	return delta >= 0 && delta%time.Minute.Microseconds() == 0
 }
