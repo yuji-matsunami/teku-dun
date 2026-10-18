@@ -65,6 +65,7 @@ func newTestService(repo *serviceTestRepository) (*Service, time.Time) {
 
 func TestServicePutSessionTimeValidation(t *testing.T) {
 	_, now := newTestService(&serviceTestRepository{})
+	startWithOffset := time.Date(2026, time.January, 1, 18, 0, 0, 123456789, time.FixedZone("JST", 9*60*60))
 
 	tests := []struct {
 		name      string
@@ -86,6 +87,11 @@ func TestServicePutSessionTimeValidation(t *testing.T) {
 			name:      "past is accepted",
 			start:     now.Add(-24 * time.Hour),
 			wantStart: now.Add(-24 * time.Hour).UTC(),
+		},
+		{
+			name:      "timezone and sub-microseconds are normalized",
+			start:     startWithOffset,
+			wantStart: startWithOffset.UTC().Truncate(time.Microsecond),
 		},
 		{
 			name:    "zero time is rejected",
@@ -114,7 +120,7 @@ func TestServicePutSessionTimeValidation(t *testing.T) {
 			if repo.sessionCalls != 1 {
 				t.Fatalf("repository calls = %d, want 1", repo.sessionCalls)
 			}
-			if !repo.session.StartDatetime.Equal(tt.wantStart) {
+			if !repo.session.StartDatetime.Equal(tt.wantStart) || repo.session.StartDatetime.Location() != time.UTC {
 				t.Fatalf("stored start = %s, want %s", repo.session.StartDatetime, tt.wantStart)
 			}
 		})
@@ -282,7 +288,7 @@ func TestServicePutLocationValidation(t *testing.T) {
 			if repo.locationCalls != 1 {
 				t.Fatalf("repository calls = %d, want 1", repo.locationCalls)
 			}
-			if !repo.location.RecordedAt.Equal(tt.wantAt) {
+			if !repo.location.RecordedAt.Equal(tt.wantAt) || repo.location.RecordedAt.Location() != time.UTC {
 				t.Fatalf("stored recorded_at = %s, want %s", repo.location.RecordedAt, tt.wantAt)
 			}
 		})
@@ -439,6 +445,17 @@ func TestServicePutStepsValidation(t *testing.T) {
 			wantErr: ErrInvalid,
 		},
 		{
+			name: "duration collapsed by microsecond normalization is rejected",
+			steps: Steps{
+				ID:            testEventID,
+				SessionID:     testSessionID,
+				StartDatetime: now.Add(100 * time.Nanosecond),
+				EndDatetime:   now.Add(900 * time.Nanosecond),
+				Revision:      1,
+			},
+			wantErr: ErrInvalid,
+		},
+		{
 			name: "negative duration is rejected",
 			steps: Steps{
 				ID:            testEventID,
@@ -508,7 +525,8 @@ func TestServicePutStepsValidation(t *testing.T) {
 			if repo.stepsCalls != 1 {
 				t.Fatalf("repository calls = %d, want 1", repo.stepsCalls)
 			}
-			if !repo.steps.StartDatetime.Equal(tt.wantStart) || !repo.steps.EndDatetime.Equal(tt.wantEnd) {
+			if !repo.steps.StartDatetime.Equal(tt.wantStart) || !repo.steps.EndDatetime.Equal(tt.wantEnd) ||
+				repo.steps.StartDatetime.Location() != time.UTC || repo.steps.EndDatetime.Location() != time.UTC {
 				t.Fatalf("stored interval = %s-%s, want %s-%s", repo.steps.StartDatetime, repo.steps.EndDatetime, tt.wantStart, tt.wantEnd)
 			}
 			if repo.steps.Steps != tt.steps.Steps || repo.steps.Revision != tt.steps.Revision {

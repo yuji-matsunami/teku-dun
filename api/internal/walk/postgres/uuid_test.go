@@ -6,38 +6,30 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestParseUUID(t *testing.T) {
+func TestToPgUUID(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name  string
-		value string
-		want  bool
-	}{
-		{name: "標準形式", value: "6ba7b810-9dad-11d1-80b4-00c04fd430c8", want: true},
-		{name: "大文字の標準形式", value: "6BA7B810-9DAD-11D1-80B4-00C04FD430C8", want: true},
-		{name: "ハイフンなし", value: "6ba7b8109dad11d180b400c04fd430c8", want: false},
-		{name: "URN形式", value: "urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8", want: false},
-		{name: "波括弧付き", value: "{6ba7b810-9dad-11d1-80b4-00c04fd430c8}", want: false},
-		{name: "nil UUID", value: "00000000-0000-0000-0000-000000000000", want: false},
-		{name: "不正な文字", value: "6ba7b810-9dad-11d1-80b4-00c04fd430cg", want: false},
-	}
+	t.Run("変換成功", func(t *testing.T) {
+		t.Parallel()
 
-	wantBytes := [16]byte(uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8"))
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+		value := "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+		got, ok := toPgUUID(value)
+		wantBytes := [16]byte(uuid.MustParse(value))
+		if !ok {
+			t.Fatalf("toPgUUID(%q) ok = false, want true", value)
+		}
+		if !got.Valid || got.Bytes != wantBytes {
+			t.Errorf("toPgUUID(%q) = %+v, want valid UUID %x", value, got, wantBytes)
+		}
+	})
 
-			got, ok := parseUUID(tt.value)
-			if ok != tt.want {
-				t.Fatalf("parseUUID(%q) ok = %v, want %v", tt.value, ok, tt.want)
-			}
-			if !tt.want {
-				return
-			}
-			if !got.Valid || got.Bytes != wantBytes {
-				t.Errorf("parseUUID(%q) = %+v, want valid UUID %x", tt.value, got, wantBytes)
-			}
-		})
-	}
+	t.Run("解析不能", func(t *testing.T) {
+		t.Parallel()
+
+		value := "not-a-uuid"
+		got, ok := toPgUUID(value)
+		if ok || got.Valid {
+			t.Errorf("toPgUUID(%q) = (%+v, %v), want invalid UUID and false", value, got, ok)
+		}
+	})
 }
