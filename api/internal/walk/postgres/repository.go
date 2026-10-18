@@ -4,6 +4,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -127,12 +128,24 @@ func (r *Repository) PutSteps(ctx context.Context, steps walk.Steps) error {
 		SessionID:     sessionID,
 		StartDatetime: timestamp(start),
 	})
-	if err == nil {
+	switch {
+	case err == nil:
 		return applyExistingSteps(ctx, tx, queries, existing, id, sessionID, start, end, steps)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	case errors.Is(err, pgx.ErrNoRows):
+		return insertOrResolveSteps(ctx, tx, queries, id, sessionID, start, end, steps)
+	default:
 		return err
 	}
+}
+
+func insertOrResolveSteps(
+	ctx context.Context,
+	tx pgx.Tx,
+	queries *sqlc.Queries,
+	id, sessionID pgtype.UUID,
+	start, end time.Time,
+	steps walk.Steps,
+) error {
 	rows, err := queries.InsertSteps(ctx, sqlc.InsertStepsParams{
 		ID:            id,
 		SessionID:     sessionID,
@@ -144,16 +157,18 @@ func (r *Repository) PutSteps(ctx context.Context, steps walk.Steps) error {
 	if err != nil {
 		return err
 	}
-	if rows == 1 {
+	switch rows {
+	case 1:
 		return tx.Commit(ctx)
-	}
-	if rows != 0 {
-		return walk.ErrConflict
+	case 0:
+		// 競合した既存行を再取得する。
+	default:
+		return fmt.Errorf("unexpected inserted step row count: %d", rows)
 	}
 
 	// 親Sessionをロックしないため、区間確認後に別トランザクションが同じ区間を挿入することがある。
 	// ON CONFLICTで挿入されなかった場合は区間を再取得して冪等性を判定し、区間がなければID競合を確認する。
-	existing, err = queries.GetStepsByIntervalForUpdate(ctx, sqlc.GetStepsByIntervalForUpdateParams{
+	existing, err := queries.GetStepsByIntervalForUpdate(ctx, sqlc.GetStepsByIntervalForUpdateParams{
 		SessionID:     sessionID,
 		StartDatetime: timestamp(start),
 	})
