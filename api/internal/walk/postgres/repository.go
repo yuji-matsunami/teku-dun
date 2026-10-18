@@ -21,6 +21,9 @@ type Repository struct {
 
 // NewRepositoryは、PostgreSQLを使用する散歩リポジトリを生成する。
 func NewRepository(pool *pgxpool.Pool) *Repository {
+	if pool == nil {
+		panic("postgres: pool must not be nil")
+	}
 	return &Repository{pool: pool}
 }
 
@@ -28,9 +31,6 @@ var _ walk.WalkRepository = (*Repository)(nil)
 
 // PutSessionは、セッションを保存する。同じ内容の再送は成功として扱う。
 func (r *Repository) PutSession(ctx context.Context, session walk.Session) error {
-	if r == nil || r.pool == nil {
-		return walk.ErrInvalid
-	}
 	id, ok := parseUUID(session.ID)
 	if !ok || session.StartDatetime.IsZero() {
 		return walk.ErrInvalid
@@ -57,9 +57,6 @@ func (r *Repository) PutSession(ctx context.Context, session walk.Session) error
 
 // PutLocationは、位置情報を保存する。同じ内容の再送は成功として扱う。
 func (r *Repository) PutLocation(ctx context.Context, location walk.Location) error {
-	if r == nil || r.pool == nil {
-		return walk.ErrInvalid
-	}
 	id, idOK := parseUUID(location.ID)
 	sessionID, sessionOK := parseUUID(location.SessionID)
 	if !idOK || !sessionOK || location.RecordedAt.IsZero() || !validCoordinate(location.Latitude, location.Longitude, location.AccuracyM) {
@@ -108,9 +105,6 @@ func (r *Repository) PutLocation(ctx context.Context, location walk.Location) er
 
 // PutStepsは、固定区間の歩数を保存し、より新しいリビジョンで更新する。
 func (r *Repository) PutSteps(ctx context.Context, steps walk.Steps) error {
-	if r == nil || r.pool == nil {
-		return walk.ErrInvalid
-	}
 	id, idOK := parseUUID(steps.ID)
 	sessionID, sessionOK := parseUUID(steps.SessionID)
 	if !idOK || !sessionOK || steps.StartDatetime.IsZero() || steps.EndDatetime.IsZero() || steps.Steps < 0 || steps.Revision < 1 {
