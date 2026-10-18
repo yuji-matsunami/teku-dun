@@ -47,6 +47,24 @@ func (q *Queries) GetLocationForUpdate(ctx context.Context, id pgtype.UUID) (Get
 	return i, err
 }
 
+const getSession = `-- name: GetSession :one
+SELECT id, start_datetime
+FROM walk_sessions
+WHERE id = $1
+`
+
+type GetSessionRow struct {
+	ID            pgtype.UUID        `json:"id"`
+	StartDatetime pgtype.Timestamptz `json:"start_datetime"`
+}
+
+func (q *Queries) GetSession(ctx context.Context, id pgtype.UUID) (GetSessionRow, error) {
+	row := q.db.QueryRow(ctx, getSession, id)
+	var i GetSessionRow
+	err := row.Scan(&i.ID, &i.StartDatetime)
+	return i, err
+}
+
 const getSessionForUpdate = `-- name: GetSessionForUpdate :one
 SELECT id, start_datetime
 FROM walk_sessions

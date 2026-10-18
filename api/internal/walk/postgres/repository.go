@@ -54,6 +54,26 @@ func (r *Repository) PutSession(ctx context.Context, session walk.Session) error
 	return tx.Commit(ctx)
 }
 
+// GetSessionは、セッションを取得する。保存されていない場合はErrNotFoundを返す。
+func (r *Repository) GetSession(ctx context.Context, id string) (walk.Session, error) {
+	pgID, ok := toPgUUID(id)
+	if !ok {
+		return walk.Session{}, walk.ErrInvalid
+	}
+	existing, err := sqlc.New(r.pool).GetSession(ctx, pgID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return walk.Session{}, walk.ErrNotFound
+	}
+	if err != nil {
+		return walk.Session{}, err
+	}
+	start, ok := timeValue(existing.StartDatetime)
+	if !ok {
+		return walk.Session{}, errors.New("stored session has an invalid start time")
+	}
+	return walk.Session{ID: id, StartDatetime: start}, nil
+}
+
 // PutLocationは、位置情報を保存する。同じ内容の再送は成功として扱う。
 func (r *Repository) PutLocation(ctx context.Context, location walk.Location) error {
 	id, idOK := toPgUUID(location.ID)
@@ -68,20 +88,6 @@ func (r *Repository) PutLocation(ctx context.Context, location walk.Location) er
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	queries := sqlc.New(tx)
-	session, err := queries.GetSessionForUpdate(ctx, sessionID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return walk.ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	sessionStart, ok := timeValue(session.StartDatetime)
-	if !ok {
-		return errors.New("stored session has an invalid start time")
-	}
-	if recordedAt.Before(sessionStart) {
-		return walk.ErrInvalid
-	}
 	if err := queries.InsertLocation(ctx, sqlc.InsertLocationParams{
 		ID:         id,
 		SessionID:  sessionID,
@@ -117,54 +123,12 @@ func (r *Repository) PutSteps(ctx context.Context, steps walk.Steps) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	queries := sqlc.New(tx)
-	session, err := queries.GetSessionForUpdate(ctx, sessionID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return walk.ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	sessionStart, ok := timeValue(session.StartDatetime)
-	if !ok {
-		return errors.New("stored session has an invalid start time")
-	}
-	if start.Before(sessionStart) || !wholeMinutesFrom(sessionStart, start) {
-		return walk.ErrInvalid
-	}
-
 	existing, err := queries.GetStepsByIntervalForUpdate(ctx, sqlc.GetStepsByIntervalForUpdateParams{
 		SessionID:     sessionID,
 		StartDatetime: timestamp(start),
 	})
 	if err == nil {
-		if !sameUUID(existing.ID, id) || !sameTimestamp(existing.EndDatetime, end) {
-			return walk.ErrConflict
-		}
-		if steps.Revision < existing.Revision {
-			return tx.Commit(ctx)
-		}
-		if steps.Revision == existing.Revision {
-			if steps.Steps != existing.Steps {
-				return walk.ErrConflict
-			}
-			return tx.Commit(ctx)
-		}
-		if err := queries.UpdateSteps(ctx, sqlc.UpdateStepsParams{ID: id, Steps: steps.Steps, Revision: steps.Revision}); err != nil {
-			return err
-		}
-		return tx.Commit(ctx)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return err
-	}
-	// UUIDを別の区間へ移すことはできない。
-	// 挿入前に確認し、制約違反をドメイン上の競合として返す。
-	byID, err := queries.GetStepsByIDForUpdate(ctx, id)
-	if err == nil {
-		if !sameUUID(byID.SessionID, sessionID) || !sameTimestamp(byID.StartDatetime, start) || !sameTimestamp(byID.EndDatetime, end) {
-			return walk.ErrConflict
-		}
-		return walk.ErrConflict
+		return applyExistingSteps(ctx, tx, queries, existing, id, sessionID, start, end, steps)
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
@@ -180,8 +144,57 @@ func (r *Repository) PutSteps(ctx context.Context, steps walk.Steps) error {
 	if err != nil {
 		return err
 	}
-	if rows != 1 {
+	if rows == 1 {
+		return tx.Commit(ctx)
+	}
+	if rows != 0 {
 		return walk.ErrConflict
+	}
+
+	// 親Sessionをロックしないため、区間確認後に別トランザクションが同じ区間を挿入することがある。
+	// ON CONFLICTで挿入されなかった場合は区間を再取得して冪等性を判定し、区間がなければID競合を確認する。
+	existing, err = queries.GetStepsByIntervalForUpdate(ctx, sqlc.GetStepsByIntervalForUpdateParams{
+		SessionID:     sessionID,
+		StartDatetime: timestamp(start),
+	})
+	if err == nil {
+		return applyExistingSteps(ctx, tx, queries, existing, id, sessionID, start, end, steps)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	if _, err := queries.GetStepsByIDForUpdate(ctx, id); err == nil {
+		return walk.ErrConflict
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	return walk.ErrConflict
+}
+
+func applyExistingSteps(
+	ctx context.Context,
+	tx pgx.Tx,
+	queries *sqlc.Queries,
+	existing sqlc.GetStepsByIntervalForUpdateRow,
+	id, sessionID pgtype.UUID,
+	start, end time.Time,
+	steps walk.Steps,
+) error {
+	if !sameUUID(existing.ID, id) || !sameUUID(existing.SessionID, sessionID) ||
+		!sameTimestamp(existing.StartDatetime, start) || !sameTimestamp(existing.EndDatetime, end) {
+		return walk.ErrConflict
+	}
+	if steps.Revision < existing.Revision {
+		return tx.Commit(ctx)
+	}
+	if steps.Revision == existing.Revision {
+		if steps.Steps != existing.Steps {
+			return walk.ErrConflict
+		}
+		return tx.Commit(ctx)
+	}
+	if err := queries.UpdateSteps(ctx, sqlc.UpdateStepsParams{ID: id, Steps: steps.Steps, Revision: steps.Revision}); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }
@@ -202,11 +215,4 @@ func timeValue(value pgtype.Timestamptz) (time.Time, bool) {
 
 func sameTimestamp(stored pgtype.Timestamptz, value time.Time) bool {
 	return stored.Valid && stored.Time.Equal(value)
-}
-
-func wholeMinutesFrom(start, value time.Time) bool {
-	// time.Durationは約290年を超えると上限値になるため、
-	// RFC 3339が扱う年の範囲でも計算できるUnixMicroを使用する。
-	delta := value.UnixMicro() - start.UnixMicro()
-	return delta >= 0 && delta%time.Minute.Microseconds() == 0
 }
