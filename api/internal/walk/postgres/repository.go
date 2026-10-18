@@ -4,7 +4,6 @@ package postgres
 import (
 	"context"
 	"errors"
-	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,7 +13,7 @@ import (
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk/postgres/sqlc"
 )
 
-// Repositoryは、散歩イベントをPostgreSQLに保存する。
+// Repositoryは、Serviceで入力検証と時刻のUTC・マイクロ秒正規化を済ませた散歩イベントをPostgreSQLに保存する。
 type Repository struct {
 	pool *pgxpool.Pool
 }
@@ -31,11 +30,11 @@ var _ walk.WalkRepository = (*Repository)(nil)
 
 // PutSessionは、セッションを保存する。同じ内容の再送は成功として扱う。
 func (r *Repository) PutSession(ctx context.Context, session walk.Session) error {
-	id, ok := parseUUID(session.ID)
-	if !ok || session.StartDatetime.IsZero() {
+	id, ok := toPgUUID(session.ID)
+	if !ok {
 		return walk.ErrInvalid
 	}
-	start := canonicalTime(session.StartDatetime)
+	start := session.StartDatetime
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -57,12 +56,12 @@ func (r *Repository) PutSession(ctx context.Context, session walk.Session) error
 
 // PutLocationは、位置情報を保存する。同じ内容の再送は成功として扱う。
 func (r *Repository) PutLocation(ctx context.Context, location walk.Location) error {
-	id, idOK := parseUUID(location.ID)
-	sessionID, sessionOK := parseUUID(location.SessionID)
-	if !idOK || !sessionOK || location.RecordedAt.IsZero() || !validCoordinate(location.Latitude, location.Longitude, location.AccuracyM) {
+	id, idOK := toPgUUID(location.ID)
+	sessionID, sessionOK := toPgUUID(location.SessionID)
+	if !idOK || !sessionOK {
 		return walk.ErrInvalid
 	}
-	recordedAt := canonicalTime(location.RecordedAt)
+	recordedAt := location.RecordedAt
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -105,16 +104,13 @@ func (r *Repository) PutLocation(ctx context.Context, location walk.Location) er
 
 // PutStepsは、固定区間の歩数を保存し、より新しいリビジョンで更新する。
 func (r *Repository) PutSteps(ctx context.Context, steps walk.Steps) error {
-	id, idOK := parseUUID(steps.ID)
-	sessionID, sessionOK := parseUUID(steps.SessionID)
-	if !idOK || !sessionOK || steps.StartDatetime.IsZero() || steps.EndDatetime.IsZero() || steps.Steps < 0 || steps.Revision < 1 {
+	id, idOK := toPgUUID(steps.ID)
+	sessionID, sessionOK := toPgUUID(steps.SessionID)
+	if !idOK || !sessionOK {
 		return walk.ErrInvalid
 	}
-	start := canonicalTime(steps.StartDatetime)
-	end := canonicalTime(steps.EndDatetime)
-	if end.Sub(start) <= 0 || end.Sub(start) > time.Minute {
-		return walk.ErrInvalid
-	}
+	start := steps.StartDatetime
+	end := steps.EndDatetime
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -196,10 +192,6 @@ func sameLocation(existing sqlc.GetLocationForUpdateRow, id, sessionID pgtype.UU
 		existing.Longitude == location.Longitude && existing.AccuracyM == location.AccuracyM
 }
 
-func canonicalTime(value time.Time) time.Time {
-	return value.UTC().Truncate(time.Microsecond)
-}
-
 func timestamp(value time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: value, Valid: true}
 }
@@ -217,10 +209,4 @@ func wholeMinutesFrom(start, value time.Time) bool {
 	// RFC 3339が扱う年の範囲でも計算できるUnixMicroを使用する。
 	delta := value.UnixMicro() - start.UnixMicro()
 	return delta >= 0 && delta%time.Minute.Microseconds() == 0
-}
-
-func validCoordinate(latitude, longitude, accuracy float64) bool {
-	return !math.IsNaN(latitude) && !math.IsInf(latitude, 0) && latitude >= -90 && latitude <= 90 &&
-		!math.IsNaN(longitude) && !math.IsInf(longitude, 0) && longitude >= -180 && longitude <= 180 &&
-		!math.IsNaN(accuracy) && !math.IsInf(accuracy, 0) && accuracy >= 0
 }
