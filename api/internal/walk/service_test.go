@@ -14,21 +14,34 @@ const (
 )
 
 type serviceTestRepository struct {
-	session       Session
-	location      Location
-	steps         Steps
-	sessionCalls  int
-	locationCalls int
-	stepsCalls    int
-	sessionErr    error
-	locationErr   error
-	stepsErr      error
+	session         Session
+	location        Location
+	steps           Steps
+	sessionCalls    int
+	locationCalls   int
+	stepsCalls      int
+	sessionErr      error
+	getSessionCalls int
+	getSessionErr   error
+	locationErr     error
+	stepsErr        error
 }
 
 func (r *serviceTestRepository) PutSession(_ context.Context, session Session) error {
 	r.sessionCalls++
 	r.session = session
 	return r.sessionErr
+}
+
+func (r *serviceTestRepository) GetSession(_ context.Context, id string) (Session, error) {
+	r.getSessionCalls++
+	if r.getSessionErr != nil {
+		return Session{}, r.getSessionErr
+	}
+	if r.session.ID != id {
+		return Session{}, ErrNotFound
+	}
+	return r.session, nil
 }
 
 func (r *serviceTestRepository) PutLocation(_ context.Context, location Location) error {
@@ -113,10 +126,12 @@ func TestServicePutLocationValidation(t *testing.T) {
 	recordedAt := now.Add(123456789 * time.Nanosecond)
 
 	tests := []struct {
-		name     string
-		location Location
-		wantErr  error
-		wantAt   time.Time
+		name                string
+		location            Location
+		sessionStart        time.Time
+		wantErr             error
+		wantAt              time.Time
+		wantGetSessionCalls int
 	}{
 		{
 			name: "valid location is normalized",
@@ -128,7 +143,8 @@ func TestServicePutLocationValidation(t *testing.T) {
 				Longitude:  139.767125,
 				AccuracyM:  3.5,
 			},
-			wantAt: recordedAt.Truncate(time.Microsecond),
+			wantAt:              recordedAt.Truncate(time.Microsecond),
+			wantGetSessionCalls: 1,
 		},
 		{
 			name: "future boundary is accepted",
@@ -140,7 +156,8 @@ func TestServicePutLocationValidation(t *testing.T) {
 				Longitude:  0,
 				AccuracyM:  0,
 			},
-			wantAt: now.UTC().Add(5 * time.Minute),
+			wantAt:              now.UTC().Add(5 * time.Minute),
+			wantGetSessionCalls: 1,
 		},
 		{
 			name: "future beyond boundary is rejected",
@@ -164,7 +181,22 @@ func TestServicePutLocationValidation(t *testing.T) {
 				Longitude:  180,
 				AccuracyM:  0,
 			},
-			wantAt: now.UTC().Add(-time.Hour),
+			wantAt:              now.UTC().Add(-time.Hour),
+			wantGetSessionCalls: 1,
+		},
+		{
+			name:         "event before session start is rejected",
+			sessionStart: now,
+			location: Location{
+				ID:         testEventID,
+				SessionID:  testSessionID,
+				RecordedAt: now.Add(-time.Minute),
+				Latitude:   35.681236,
+				Longitude:  139.767125,
+				AccuracyM:  3.5,
+			},
+			wantErr:             ErrInvalid,
+			wantGetSessionCalls: 1,
 		},
 		{
 			name: "event UUID is invalid",
@@ -228,11 +260,18 @@ func TestServicePutLocationValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := &serviceTestRepository{}
+			sessionStart := tt.sessionStart
+			if sessionStart.IsZero() {
+				sessionStart = now.Add(-time.Hour)
+			}
+			repo := &serviceTestRepository{session: Session{ID: testSessionID, StartDatetime: sessionStart}}
 			service, _ := newTestService(repo)
 			err := service.PutLocation(context.Background(), tt.location)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if repo.getSessionCalls != tt.wantGetSessionCalls {
+				t.Fatalf("GetSession calls = %d, want %d", repo.getSessionCalls, tt.wantGetSessionCalls)
 			}
 			if tt.wantErr != nil {
 				if repo.locationCalls != 0 {
@@ -256,11 +295,13 @@ func TestServicePutStepsValidation(t *testing.T) {
 	endWithOffset := startWithOffset.Add(time.Minute)
 
 	tests := []struct {
-		name      string
-		steps     Steps
-		wantErr   error
-		wantStart time.Time
-		wantEnd   time.Time
+		name                string
+		steps               Steps
+		sessionStart        time.Time
+		wantErr             error
+		wantStart           time.Time
+		wantEnd             time.Time
+		wantGetSessionCalls int
 	}{
 		{
 			name: "one minute interval and revision are accepted",
@@ -272,8 +313,10 @@ func TestServicePutStepsValidation(t *testing.T) {
 				Steps:         120,
 				Revision:      7,
 			},
-			wantStart: startWithOffset.UTC().Truncate(time.Microsecond),
-			wantEnd:   endWithOffset.UTC().Truncate(time.Microsecond),
+			sessionStart:        startWithOffset.UTC().Truncate(time.Microsecond),
+			wantStart:           startWithOffset.UTC().Truncate(time.Microsecond),
+			wantEnd:             endWithOffset.UTC().Truncate(time.Microsecond),
+			wantGetSessionCalls: 1,
 		},
 		{
 			name: "short final interval is accepted",
@@ -285,8 +328,10 @@ func TestServicePutStepsValidation(t *testing.T) {
 				Steps:         0,
 				Revision:      1,
 			},
-			wantStart: now.UTC().Add(-time.Minute),
-			wantEnd:   now.UTC().Add(-30 * time.Second),
+			sessionStart:        now.Add(-time.Minute),
+			wantStart:           now.UTC().Add(-time.Minute),
+			wantEnd:             now.UTC().Add(-30 * time.Second),
+			wantGetSessionCalls: 1,
 		},
 		{
 			name: "future boundary is accepted",
@@ -298,8 +343,10 @@ func TestServicePutStepsValidation(t *testing.T) {
 				Steps:         1,
 				Revision:      1,
 			},
-			wantStart: now.UTC().Add(4 * time.Minute),
-			wantEnd:   now.UTC().Add(5 * time.Minute),
+			sessionStart:        now,
+			wantStart:           now.UTC().Add(4 * time.Minute),
+			wantEnd:             now.UTC().Add(5 * time.Minute),
+			wantGetSessionCalls: 1,
 		},
 		{
 			name: "future beyond boundary is rejected",
@@ -323,8 +370,51 @@ func TestServicePutStepsValidation(t *testing.T) {
 				Steps:         10,
 				Revision:      2,
 			},
-			wantStart: now.UTC().Add(-2 * time.Minute),
-			wantEnd:   now.UTC().Add(-time.Minute),
+			sessionStart:        now.Add(-3 * time.Minute),
+			wantStart:           now.UTC().Add(-2 * time.Minute),
+			wantEnd:             now.UTC().Add(-time.Minute),
+			wantGetSessionCalls: 1,
+		},
+		{
+			name: "start on session minute boundary is accepted",
+			steps: Steps{
+				ID:            testEventID,
+				SessionID:     testSessionID,
+				StartDatetime: now,
+				EndDatetime:   now.Add(time.Minute),
+				Steps:         12,
+				Revision:      1,
+			},
+			sessionStart:        now.Add(-time.Minute),
+			wantStart:           now.UTC(),
+			wantEnd:             now.UTC().Add(time.Minute),
+			wantGetSessionCalls: 1,
+		},
+		{
+			name: "start before session start is rejected",
+			steps: Steps{
+				ID:            testEventID,
+				SessionID:     testSessionID,
+				StartDatetime: now.Add(-time.Minute),
+				EndDatetime:   now,
+				Revision:      1,
+			},
+			sessionStart:        now,
+			wantErr:             ErrInvalid,
+			wantGetSessionCalls: 1,
+		},
+		{
+			name: "start outside session minute boundary is rejected",
+			steps: Steps{
+				ID:            testEventID,
+				SessionID:     testSessionID,
+				StartDatetime: now,
+				EndDatetime:   now.Add(30 * time.Second),
+				Revision:      1,
+			},
+			sessionStart:        now.Add(-30 * time.Second),
+			wantErr:             ErrInvalid,
+			wantGetSessionCalls: 1,
 		},
 		{
 			name: "duration over one minute is rejected",
@@ -398,10 +488,16 @@ func TestServicePutStepsValidation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &serviceTestRepository{}
+			if tt.wantGetSessionCalls > 0 {
+				repo.session = Session{ID: testSessionID, StartDatetime: tt.sessionStart}
+			}
 			service, _ := newTestService(repo)
 			err := service.PutSteps(context.Background(), tt.steps)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+			if repo.getSessionCalls != tt.wantGetSessionCalls {
+				t.Fatalf("GetSession calls = %d, want %d", repo.getSessionCalls, tt.wantGetSessionCalls)
 			}
 			if tt.wantErr != nil {
 				if repo.stepsCalls != 0 {
@@ -431,6 +527,50 @@ func TestServicePropagatesRepositoryError(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("error = %v, want %v", err, wantErr)
 	}
+}
+
+func TestServicePropagatesMissingSessionWithoutSaving(t *testing.T) {
+	t.Run("location", func(t *testing.T) {
+		repo := &serviceTestRepository{getSessionErr: ErrNotFound}
+		service, now := newTestService(repo)
+		location := Location{
+			ID:         testEventID,
+			SessionID:  testSessionID,
+			RecordedAt: now,
+			Latitude:   35.681236,
+			Longitude:  139.767125,
+			AccuracyM:  3.5,
+		}
+
+		err := service.PutLocation(context.Background(), location)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("error = %v, want %v", err, ErrNotFound)
+		}
+		if repo.getSessionCalls != 1 || repo.locationCalls != 0 {
+			t.Fatalf("GetSession calls = %d, PutLocation calls = %d, want 1 and 0", repo.getSessionCalls, repo.locationCalls)
+		}
+	})
+
+	t.Run("steps", func(t *testing.T) {
+		repo := &serviceTestRepository{getSessionErr: ErrNotFound}
+		service, now := newTestService(repo)
+		steps := Steps{
+			ID:            testEventID,
+			SessionID:     testSessionID,
+			StartDatetime: now,
+			EndDatetime:   now.Add(time.Minute),
+			Steps:         10,
+			Revision:      1,
+		}
+
+		err := service.PutSteps(context.Background(), steps)
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("error = %v, want %v", err, ErrNotFound)
+		}
+		if repo.getSessionCalls != 1 || repo.stepsCalls != 0 {
+			t.Fatalf("GetSession calls = %d, PutSteps calls = %d, want 1 and 0", repo.getSessionCalls, repo.stepsCalls)
+		}
+	})
 }
 
 func TestNormalizeAndValidateTime(t *testing.T) {
@@ -528,6 +668,14 @@ func TestNormalizeAndValidateTime(t *testing.T) {
 				t.Fatalf("time = %s (%s), want %s (UTC)", got, got.Location(), tt.want)
 			}
 		})
+	}
+}
+
+func TestWholeMinutesFromAcrossRFC3339YearRange(t *testing.T) {
+	start := time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(9999, time.January, 1, 0, 0, 0, 0, time.UTC)
+	if !wholeMinutesFrom(start, end) {
+		t.Fatalf("wholeMinutesFrom(%s, %s) = false, want true", start, end)
 	}
 }
 

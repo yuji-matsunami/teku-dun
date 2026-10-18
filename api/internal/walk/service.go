@@ -62,6 +62,13 @@ func (s *Service) PutLocation(ctx context.Context, location Location) error {
 		return ErrInvalid
 	}
 	location.RecordedAt = recordedAt
+	session, err := s.repo.GetSession(ctx, location.SessionID)
+	if err != nil {
+		return err
+	}
+	if location.RecordedAt.Before(session.StartDatetime) {
+		return ErrInvalid
+	}
 	return s.repo.PutLocation(ctx, location)
 }
 
@@ -88,6 +95,13 @@ func (s *Service) PutSteps(ctx context.Context, steps Steps) error {
 	}
 	steps.StartDatetime = start
 	steps.EndDatetime = end
+	session, err := s.repo.GetSession(ctx, steps.SessionID)
+	if err != nil {
+		return err
+	}
+	if steps.StartDatetime.Before(session.StartDatetime) || !wholeMinutesFrom(session.StartDatetime, steps.StartDatetime) {
+		return ErrInvalid
+	}
 	return s.repo.PutSteps(ctx, steps)
 }
 
@@ -129,4 +143,10 @@ func isFinite(value float64) bool {
 func validUUID(value string) bool {
 	id, err := uuid.Parse(value)
 	return err == nil && id != uuid.Nil && strings.EqualFold(id.String(), value)
+}
+
+func wholeMinutesFrom(start, value time.Time) bool {
+	// time.Durationは約290年を超えると上限値になるため、UnixMicroで差分を計算する。
+	delta := value.UnixMicro() - start.UnixMicro()
+	return delta >= 0 && delta%time.Minute.Microseconds() == 0
 }
