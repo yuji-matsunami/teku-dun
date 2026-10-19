@@ -103,6 +103,41 @@ class $QueuedEventsTable extends QueuedEvents
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _attemptCountMeta = const VerificationMeta(
+    'attemptCount',
+  );
+  @override
+  late final GeneratedColumn<int> attemptCount = GeneratedColumn<int>(
+    'attempt_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastErrorMeta = const VerificationMeta(
+    'lastError',
+  );
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+    'last_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastAttemptedAtMeta = const VerificationMeta(
+    'lastAttemptedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastAttemptedAt =
+      GeneratedColumn<DateTime>(
+        'last_attempted_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -114,6 +149,9 @@ class $QueuedEventsTable extends QueuedEvents
     status,
     createdAt,
     sentAt,
+    attemptCount,
+    lastError,
+    lastAttemptedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -174,6 +212,30 @@ class $QueuedEventsTable extends QueuedEvents
         sentAt.isAcceptableOrUnknown(data['sent_at']!, _sentAtMeta),
       );
     }
+    if (data.containsKey('attempt_count')) {
+      context.handle(
+        _attemptCountMeta,
+        attemptCount.isAcceptableOrUnknown(
+          data['attempt_count']!,
+          _attemptCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(
+        _lastErrorMeta,
+        lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
+      );
+    }
+    if (data.containsKey('last_attempted_at')) {
+      context.handle(
+        _lastAttemptedAtMeta,
+        lastAttemptedAt.isAcceptableOrUnknown(
+          data['last_attempted_at']!,
+          _lastAttemptedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -222,6 +284,18 @@ class $QueuedEventsTable extends QueuedEvents
       sentAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}sent_at'],
+      ),
+      attemptCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempt_count'],
+      )!,
+      lastError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_error'],
+      ),
+      lastAttemptedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_attempted_at'],
       ),
     );
   }
@@ -285,6 +359,19 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   /// When the event was successfully sent, if it has been. Callers must pass
   /// UTC values, as for [capturedAt].
   final DateTime? sentAt;
+
+  /// How many send attempts have failed for this event, whether the failure
+  /// was worth retrying or ended in [QueuedEventStatus.rejected]. Successful
+  /// attempts are not counted.
+  final int attemptCount;
+
+  /// Why the latest send attempt failed, for display and debugging. Null until
+  /// an attempt fails, and cleared again once an attempt succeeds.
+  final String? lastError;
+
+  /// When the latest send attempt finished, whether it succeeded or not.
+  /// Callers must pass UTC values, as for [capturedAt].
+  final DateTime? lastAttemptedAt;
   const QueuedEvent({
     required this.id,
     required this.sessionId,
@@ -295,6 +382,9 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
     required this.status,
     required this.createdAt,
     this.sentAt,
+    required this.attemptCount,
+    this.lastError,
+    this.lastAttemptedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -318,6 +408,13 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
     if (!nullToAbsent || sentAt != null) {
       map['sent_at'] = Variable<DateTime>(sentAt);
     }
+    map['attempt_count'] = Variable<int>(attemptCount);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    if (!nullToAbsent || lastAttemptedAt != null) {
+      map['last_attempted_at'] = Variable<DateTime>(lastAttemptedAt);
+    }
     return map;
   }
 
@@ -334,6 +431,13 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
       sentAt: sentAt == null && nullToAbsent
           ? const Value.absent()
           : Value(sentAt),
+      attemptCount: Value(attemptCount),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      lastAttemptedAt: lastAttemptedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastAttemptedAt),
     );
   }
 
@@ -356,6 +460,9 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
       ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       sentAt: serializer.fromJson<DateTime?>(json['sentAt']),
+      attemptCount: serializer.fromJson<int>(json['attemptCount']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      lastAttemptedAt: serializer.fromJson<DateTime?>(json['lastAttemptedAt']),
     );
   }
   @override
@@ -375,6 +482,9 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
       ),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'sentAt': serializer.toJson<DateTime?>(sentAt),
+      'attemptCount': serializer.toJson<int>(attemptCount),
+      'lastError': serializer.toJson<String?>(lastError),
+      'lastAttemptedAt': serializer.toJson<DateTime?>(lastAttemptedAt),
     };
   }
 
@@ -388,6 +498,9 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
     QueuedEventStatus? status,
     DateTime? createdAt,
     Value<DateTime?> sentAt = const Value.absent(),
+    int? attemptCount,
+    Value<String?> lastError = const Value.absent(),
+    Value<DateTime?> lastAttemptedAt = const Value.absent(),
   }) => QueuedEvent(
     id: id ?? this.id,
     sessionId: sessionId ?? this.sessionId,
@@ -398,6 +511,11 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
     status: status ?? this.status,
     createdAt: createdAt ?? this.createdAt,
     sentAt: sentAt.present ? sentAt.value : this.sentAt,
+    attemptCount: attemptCount ?? this.attemptCount,
+    lastError: lastError.present ? lastError.value : this.lastError,
+    lastAttemptedAt: lastAttemptedAt.present
+        ? lastAttemptedAt.value
+        : this.lastAttemptedAt,
   );
   QueuedEvent copyWithCompanion(QueuedEventsCompanion data) {
     return QueuedEvent(
@@ -412,6 +530,13 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
       status: data.status.present ? data.status.value : this.status,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       sentAt: data.sentAt.present ? data.sentAt.value : this.sentAt,
+      attemptCount: data.attemptCount.present
+          ? data.attemptCount.value
+          : this.attemptCount,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      lastAttemptedAt: data.lastAttemptedAt.present
+          ? data.lastAttemptedAt.value
+          : this.lastAttemptedAt,
     );
   }
 
@@ -426,7 +551,10 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
           ..write('revision: $revision, ')
           ..write('status: $status, ')
           ..write('createdAt: $createdAt, ')
-          ..write('sentAt: $sentAt')
+          ..write('sentAt: $sentAt, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('lastError: $lastError, ')
+          ..write('lastAttemptedAt: $lastAttemptedAt')
           ..write(')'))
         .toString();
   }
@@ -442,6 +570,9 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
     status,
     createdAt,
     sentAt,
+    attemptCount,
+    lastError,
+    lastAttemptedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -455,7 +586,10 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
           other.revision == this.revision &&
           other.status == this.status &&
           other.createdAt == this.createdAt &&
-          other.sentAt == this.sentAt);
+          other.sentAt == this.sentAt &&
+          other.attemptCount == this.attemptCount &&
+          other.lastError == this.lastError &&
+          other.lastAttemptedAt == this.lastAttemptedAt);
 }
 
 class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
@@ -468,6 +602,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
   final Value<QueuedEventStatus> status;
   final Value<DateTime> createdAt;
   final Value<DateTime?> sentAt;
+  final Value<int> attemptCount;
+  final Value<String?> lastError;
+  final Value<DateTime?> lastAttemptedAt;
   final Value<int> rowid;
   const QueuedEventsCompanion({
     this.id = const Value.absent(),
@@ -479,6 +616,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
     this.status = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.sentAt = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.lastAttemptedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   QueuedEventsCompanion.insert({
@@ -491,6 +631,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
     this.status = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.sentAt = const Value.absent(),
+    this.attemptCount = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.lastAttemptedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        sessionId = Value(sessionId),
@@ -507,6 +650,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
     Expression<String>? status,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? sentAt,
+    Expression<int>? attemptCount,
+    Expression<String>? lastError,
+    Expression<DateTime>? lastAttemptedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -519,6 +665,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
       if (status != null) 'status': status,
       if (createdAt != null) 'created_at': createdAt,
       if (sentAt != null) 'sent_at': sentAt,
+      if (attemptCount != null) 'attempt_count': attemptCount,
+      if (lastError != null) 'last_error': lastError,
+      if (lastAttemptedAt != null) 'last_attempted_at': lastAttemptedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -533,6 +682,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
     Value<QueuedEventStatus>? status,
     Value<DateTime>? createdAt,
     Value<DateTime?>? sentAt,
+    Value<int>? attemptCount,
+    Value<String?>? lastError,
+    Value<DateTime?>? lastAttemptedAt,
     Value<int>? rowid,
   }) {
     return QueuedEventsCompanion(
@@ -545,6 +697,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       sentAt: sentAt ?? this.sentAt,
+      attemptCount: attemptCount ?? this.attemptCount,
+      lastError: lastError ?? this.lastError,
+      lastAttemptedAt: lastAttemptedAt ?? this.lastAttemptedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -583,6 +738,15 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
     if (sentAt.present) {
       map['sent_at'] = Variable<DateTime>(sentAt.value);
     }
+    if (attemptCount.present) {
+      map['attempt_count'] = Variable<int>(attemptCount.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (lastAttemptedAt.present) {
+      map['last_attempted_at'] = Variable<DateTime>(lastAttemptedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -601,6 +765,9 @@ class QueuedEventsCompanion extends UpdateCompanion<QueuedEvent> {
           ..write('status: $status, ')
           ..write('createdAt: $createdAt, ')
           ..write('sentAt: $sentAt, ')
+          ..write('attemptCount: $attemptCount, ')
+          ..write('lastError: $lastError, ')
+          ..write('lastAttemptedAt: $lastAttemptedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -639,6 +806,9 @@ typedef $$QueuedEventsTableCreateCompanionBuilder =
       Value<QueuedEventStatus> status,
       Value<DateTime> createdAt,
       Value<DateTime?> sentAt,
+      Value<int> attemptCount,
+      Value<String?> lastError,
+      Value<DateTime?> lastAttemptedAt,
       Value<int> rowid,
     });
 typedef $$QueuedEventsTableUpdateCompanionBuilder =
@@ -652,6 +822,9 @@ typedef $$QueuedEventsTableUpdateCompanionBuilder =
       Value<QueuedEventStatus> status,
       Value<DateTime> createdAt,
       Value<DateTime?> sentAt,
+      Value<int> attemptCount,
+      Value<String?> lastError,
+      Value<DateTime?> lastAttemptedAt,
       Value<int> rowid,
     });
 
@@ -710,6 +883,21 @@ class $$QueuedEventsTableFilterComposer
     column: $table.sentAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastAttemptedAt => $composableBuilder(
+    column: $table.lastAttemptedAt,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$QueuedEventsTableOrderingComposer
@@ -765,6 +953,21 @@ class $$QueuedEventsTableOrderingComposer
     column: $table.sentAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastAttemptedAt => $composableBuilder(
+    column: $table.lastAttemptedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$QueuedEventsTableAnnotationComposer
@@ -804,6 +1007,19 @@ class $$QueuedEventsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get sentAt =>
       $composableBuilder(column: $table.sentAt, builder: (column) => column);
+
+  GeneratedColumn<int> get attemptCount => $composableBuilder(
+    column: $table.attemptCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastAttemptedAt => $composableBuilder(
+    column: $table.lastAttemptedAt,
+    builder: (column) => column,
+  );
 }
 
 class $$QueuedEventsTableTableManager
@@ -846,6 +1062,9 @@ class $$QueuedEventsTableTableManager
                 Value<QueuedEventStatus> status = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> sentAt = const Value.absent(),
+                Value<int> attemptCount = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<DateTime?> lastAttemptedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => QueuedEventsCompanion(
                 id: id,
@@ -857,6 +1076,9 @@ class $$QueuedEventsTableTableManager
                 status: status,
                 createdAt: createdAt,
                 sentAt: sentAt,
+                attemptCount: attemptCount,
+                lastError: lastError,
+                lastAttemptedAt: lastAttemptedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -870,6 +1092,9 @@ class $$QueuedEventsTableTableManager
                 Value<QueuedEventStatus> status = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> sentAt = const Value.absent(),
+                Value<int> attemptCount = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<DateTime?> lastAttemptedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => QueuedEventsCompanion.insert(
                 id: id,
@@ -881,6 +1106,9 @@ class $$QueuedEventsTableTableManager
                 status: status,
                 createdAt: createdAt,
                 sentAt: sentAt,
+                attemptCount: attemptCount,
+                lastError: lastError,
+                lastAttemptedAt: lastAttemptedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

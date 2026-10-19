@@ -22,7 +22,11 @@ void main() {
     final capturedAt = DateTime.utc(2026, 9, 29, 12, 0, 0, 123);
     final createdAt = DateTime.utc(2026, 9, 29, 12, 0, 1);
     final sentAt = DateTime.utc(2026, 9, 29, 12, 5, 0, 456);
+    final lastAttemptedAt = DateTime.utc(2026, 9, 29, 12, 5, 0, 789);
 
+    // Every column gets a non-default value. The combination is not a state
+    // the queue produces (a sent row has no lastError); the test only checks
+    // that each column is stored and read back as given.
     await database
         .into(database.queuedEvents)
         .insert(
@@ -36,6 +40,9 @@ void main() {
             status: const Value(QueuedEventStatus.sent),
             createdAt: Value(createdAt),
             sentAt: Value(sentAt),
+            attemptCount: const Value(3),
+            lastError: const Value('HTTP 503'),
+            lastAttemptedAt: Value(lastAttemptedAt),
           ),
         );
 
@@ -52,6 +59,9 @@ void main() {
     expect(row.status, QueuedEventStatus.sent);
     expect(row.createdAt, createdAt);
     expect(row.sentAt, sentAt);
+    expect(row.attemptCount, 3);
+    expect(row.lastError, 'HTTP 503');
+    expect(row.lastAttemptedAt, lastAttemptedAt);
   });
 
   test('省略したカラムには既定値が入る', () async {
@@ -74,6 +84,9 @@ void main() {
     expect(row.status, QueuedEventStatus.pending);
     expect(row.revision, 1);
     expect(row.sentAt, isNull);
+    expect(row.attemptCount, 0);
+    expect(row.lastError, isNull);
+    expect(row.lastAttemptedAt, isNull);
   });
 
   test('createdAtの既定値は挿入時刻になる', () async {
@@ -168,6 +181,7 @@ void main() {
             capturedAt: instant,
             payload: '{}',
             sentAt: Value(instant),
+            lastAttemptedAt: Value(instant),
           ),
         );
 
@@ -179,6 +193,7 @@ void main() {
     // back as UTC.
     expect(row.capturedAt, instant);
     expect(row.sentAt, instant);
+    expect(row.lastAttemptedAt, instant);
 
     // The premise stated in app_database.dart: UTC is stored with a trailing Z.
     final raw = await database
@@ -205,6 +220,7 @@ void main() {
             capturedAt: local,
             payload: '{}',
             sentAt: Value(local),
+            lastAttemptedAt: Value(local),
           ),
         );
 
@@ -215,6 +231,7 @@ void main() {
     // DateTime's == also compares isUtc, so compare the instants in UTC.
     expect(row.capturedAt.toUtc(), instant);
     expect(row.sentAt!.toUtc(), instant);
+    expect(row.lastAttemptedAt!.toUtc(), instant);
 
     // The premise stated in app_database.dart: local time carries a UTC offset.
     final raw = await database
@@ -264,6 +281,11 @@ void main() {
       QueuedEventKind.steps,
       QueuedEventStatus.sent,
     );
+    await insert(
+      '33333333-3333-3333-3333-333333333334',
+      QueuedEventKind.session,
+      QueuedEventStatus.rejected,
+    );
 
     final rows = await database
         .customSelect('SELECT kind, status FROM queued_events ORDER BY id')
@@ -274,7 +296,12 @@ void main() {
         for (final row in rows)
           (row.read<String>('kind'), row.read<String>('status')),
       ],
-      [('session', 'pending'), ('location', 'sending'), ('steps', 'sent')],
+      [
+        ('session', 'pending'),
+        ('location', 'sending'),
+        ('steps', 'sent'),
+        ('session', 'rejected'),
+      ],
     );
   });
 }
