@@ -84,9 +84,10 @@ class QueuedEvents extends Table {
 
   /// When this row was inserted into the queue.
   ///
-  /// Set by SQLite's `CURRENT_TIMESTAMP`, so it has whole-second precision and
-  /// is stored as `YYYY-MM-DD HH:MM:SS` (UTC) rather than the ISO-8601 form
-  /// the other date columns use.
+  /// If an insert leaves it out, SQLite's `CURRENT_TIMESTAMP` fills it in, so
+  /// it has whole-second precision and is stored as `YYYY-MM-DD HH:MM:SS`
+  /// (UTC) rather than the ISO-8601 form the other date columns use. A value
+  /// passed in explicitly is stored in that ISO-8601 form instead.
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
   /// When the event was successfully sent, if it has been. Callers must pass
