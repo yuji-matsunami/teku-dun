@@ -254,24 +254,36 @@ class QueuedEvent extends DataClass implements Insertable<QueuedEvent> {
   /// When the reading was captured: the session start time for
   /// [QueuedEventKind.session], the fix time for [QueuedEventKind.location],
   /// or the interval start time for [QueuedEventKind.steps].
+  ///
+  /// Callers must pass UTC values (`DateTime.toUtc`); this is not enforced.
+  /// Dates are stored as ISO-8601 text, in which UTC ends in `Z` but local
+  /// time carries a UTC offset. Mixing the two would make the text order used
+  /// by the `(status, captured_at)` index differ from chronological order.
   final DateTime capturedAt;
 
   /// The JSON that the API request body is built from; API-specific fields
-  /// live here rather than as their own columns.
+  /// live here rather than as their own columns. It must not contain the
+  /// revision: the [revision] column is the only place that value is kept.
   final String payload;
 
   /// Client-assigned revision, used so a steps event can be resent with the
-  /// same event id and still overwrite the server's copy. Always 1 for
-  /// session and location events.
+  /// same event id and still overwrite the server's copy. Session and
+  /// location events are expected to stay at the default of 1, but the schema
+  /// does not enforce that.
   final int revision;
 
   /// Current delivery state; see [QueuedEventStatus].
   final QueuedEventStatus status;
 
   /// When this row was inserted into the queue.
+  ///
+  /// Set by SQLite's `CURRENT_TIMESTAMP`, so it has whole-second precision and
+  /// is stored as `YYYY-MM-DD HH:MM:SS` (UTC) rather than the ISO-8601 form
+  /// the other date columns use.
   final DateTime createdAt;
 
-  /// When the event was successfully sent, if it has been.
+  /// When the event was successfully sent, if it has been. Callers must pass
+  /// UTC values, as for [capturedAt].
   final DateTime? sentAt;
   const QueuedEvent({
     required this.id,
