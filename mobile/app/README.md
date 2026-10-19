@@ -28,5 +28,5 @@ URL を指定してください。平文 HTTP はデバッグビルドの Androi
 （`app_database.g.dart`）を再生成し、差分をコミットしてください。
 
 ```sh
-fvm flutter pub run build_runner build --delete-conflicting-outputs
+fvm flutter pub run build_runner build
 ```
