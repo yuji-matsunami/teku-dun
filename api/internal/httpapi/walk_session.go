@@ -9,10 +9,6 @@ import (
 
 // PutSession stores a walking session start time through the walk service.
 func (h *Handler) PutSession(w http.ResponseWriter, r *http.Request, sessionID string) {
-	if !validUUID(sessionID) {
-		writeWalkBadRequest(w, "Path parameter is invalid.")
-		return
-	}
 	if h.walk == nil {
 		writeUnavailable(w)
 		return
