@@ -22,7 +22,7 @@
 
 次のツールをmacOSにインストールしてください。
 
-- Go **1.24.6**。`api/go.mod` の `toolchain go1.24.6` に合わせます。
+- Go **1.26.10**。`api/go.mod` の `toolchain go1.26.10` に合わせます。
 - Flutter **3.47.0** と [FVM](https://fvm.app/)。`mobile/app/.fvmrc` に固定しています。
 - Docker Desktop（Docker Engine と Compose v2）。OpenAPI検証、Dart生成、PostGISに使用します。
 - Android Studio、Android SDK、Android Emulator。Android SDKのライセンスを承諾し、エミュレータを作成できる状態にします。
@@ -33,7 +33,7 @@
 バージョンを確認します。
 
 ```sh
-go version                 # go1.24.6 を確認
+go version                 # go1.26.10 を確認
 fvm --version
 docker --version
 docker compose version

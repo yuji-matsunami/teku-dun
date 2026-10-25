@@ -5,7 +5,7 @@
 仕様書ではOpenAPI **3.0.3**を使用します。現時点では、次の理由から
 OpenAPI 3.1ではなく3.0.3を選択しています。
 
-- Goサーバーの`oapi-codegen` v2.4.1と、DartクライアントのOpenAPI Generator
+- Goサーバーの`oapi-codegen` v2.8.1と、DartクライアントのOpenAPI Generator
   v7.10.0を組み合わせたコード生成を、このバージョンで検証している。
 - validator、Redoclyによるlint・プレビューを含む現在のツールチェーンで、
   サーバーとクライアントの共通契約として安定して扱える。
