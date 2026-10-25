@@ -10,10 +10,6 @@ import (
 
 // PutStepsは、歩数区間をリビジョンに従って保存または補正する。
 func (h *Handler) PutSteps(w http.ResponseWriter, r *http.Request, sessionID, eventID string) {
-	if !validUUID(sessionID) || !validUUID(eventID) {
-		writeWalkBadRequest(w, "Path parameter is invalid.")
-		return
-	}
 	if h.walk == nil {
 		writeUnavailable(w)
 		return
