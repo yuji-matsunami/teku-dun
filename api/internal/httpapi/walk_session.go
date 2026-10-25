@@ -3,11 +3,12 @@ package httpapi
 import (
 	"net/http"
 
+	openapiRuntime "github.com/oapi-codegen/runtime"
 	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk"
 )
 
-// PutSession stores a walking session start time through the walk service.
+// PutSessionは、散歩セッションの開始時刻をサービスへ渡して保存する。
 func (h *Handler) PutSession(w http.ResponseWriter, r *http.Request, sessionID string) {
 	if h.walk == nil {
 		writeUnavailable(w)
@@ -15,7 +16,7 @@ func (h *Handler) PutSession(w http.ResponseWriter, r *http.Request, sessionID s
 	}
 
 	var request openapi.PutSessionJSONRequestBody
-	if err := decodeWalkJSON(r, &request, "start_datetime"); err != nil {
+	if err := openapiRuntime.BindJSONBody(r, &request); err != nil {
 		writeWalkBadRequest(w, invalidRequestMessage)
 		return
 	}

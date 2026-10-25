@@ -1,23 +1,15 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"mime"
 	"net/http"
-	"strings"
 
 	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk"
 )
 
 const (
-	maxWalkBodyBytes = 16 * 1024
-
 	invalidRequestCode    = "invalid_request"
 	invalidRequestMessage = "Request is invalid."
 	notFoundCode          = "not_found"
@@ -32,74 +24,6 @@ type WalkService interface {
 	PutSession(context.Context, walk.Session) error
 	PutLocation(context.Context, walk.Location) error
 	PutSteps(context.Context, walk.Steps) error
-}
-
-// decodeWalkJSONは歩行API共通のJSON境界を検証して、生成された入力型へ変換する。
-// oapi-codegenのchiラッパーはbodyを自動で読み込まないため、ここでHTTP固有の
-// 制約を一箇所に集約する。requiredの値はJSONの値として0やfalseを許可する。
-func decodeWalkJSON(r *http.Request, dst any, required ...string) error {
-	if r.Body == nil {
-		return errors.New("request body is missing")
-	}
-
-	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || !strings.EqualFold(contentType, "application/json") {
-		return errors.New("content type must be application/json")
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxWalkBodyBytes+1))
-	if err != nil {
-		return errors.New("request body could not be read")
-	}
-	if len(body) > maxWalkBodyBytes {
-		return errors.New("request body is too large")
-	}
-
-	var fields map[string]json.RawMessage
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	if err := decoder.Decode(&fields); err != nil {
-		return errors.New("request body is not a JSON object")
-	}
-	if fields == nil {
-		return errors.New("request body is not a JSON object")
-	}
-	if err := rejectTrailingJSON(decoder); err != nil {
-		return err
-	}
-
-	allowed := make(map[string]struct{}, len(required))
-	for _, name := range required {
-		allowed[name] = struct{}{}
-		value, ok := fields[name]
-		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return fmt.Errorf("required field %q is missing", name)
-		}
-	}
-	for name := range fields {
-		if _, ok := allowed[name]; !ok {
-			return fmt.Errorf("unknown field %q", name)
-		}
-	}
-
-	decoder = json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(dst); err != nil {
-		return errors.New("request body has an invalid value")
-	}
-	if err := rejectTrailingJSON(decoder); err != nil {
-		return err
-	}
-	return nil
-}
-
-func rejectTrailingJSON(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return errors.New("request body has trailing JSON")
-		}
-		return errors.New("request body has trailing data")
-	}
-	return nil
 }
 
 func writeWalkBadRequest(w http.ResponseWriter, message string) {
