@@ -46,10 +46,6 @@ func decodeWalkJSON(r *http.Request, dst any, required ...string) error {
 	if err != nil || !strings.EqualFold(contentType, "application/json") {
 		return errors.New("content type must be application/json")
 	}
-	if r.ContentLength > maxWalkBodyBytes {
-		return errors.New("request body is too large")
-	}
-
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxWalkBodyBytes+1))
 	if err != nil {
 		return errors.New("request body could not be read")
