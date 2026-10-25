@@ -10,10 +10,6 @@ import (
 
 // PutLocationは、位置イベントを冪等に保存する。
 func (h *Handler) PutLocation(w http.ResponseWriter, r *http.Request, sessionID, eventID string) {
-	if !validUUID(sessionID) || !validUUID(eventID) {
-		writeWalkBadRequest(w, "Path parameter is invalid.")
-		return
-	}
 	if h.walk == nil {
 		writeUnavailable(w)
 		return
