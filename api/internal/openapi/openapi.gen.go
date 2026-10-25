@@ -12,9 +12,11 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/runtime"
 )
 
 // Defines values for HealthResponseStatus.
@@ -78,6 +80,30 @@ type ReadyResponse struct {
 // ReadyResponseStatus Example: ready
 type ReadyResponseStatus string
 
+// SessionRequest defines model for SessionRequest.
+type SessionRequest struct {
+	// StartDatetime Immutable session start time in RFC 3339 format.
+	StartDatetime time.Time `json:"start_datetime"`
+}
+
+// SessionID defines model for SessionID.
+type SessionID = string
+
+// BadRequest Standard error response returned by the API.
+type BadRequest = ErrorResponse
+
+// Conflict Standard error response returned by the API.
+type Conflict = ErrorResponse
+
+// NotFound Standard error response returned by the API.
+type NotFound = ErrorResponse
+
+// ServiceUnavailable Standard error response returned by the API.
+type ServiceUnavailable = ErrorResponse
+
+// PutSessionJSONRequestBody defines body for PutSession for application/json ContentType.
+type PutSessionJSONRequestBody = SessionRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetHealthz Check whether the service is alive
@@ -86,6 +112,9 @@ type ServerInterface interface {
 	// GetReadyz Check whether the service is ready
 	// (GET /readyz)
 	GetReadyz(w http.ResponseWriter, r *http.Request)
+	// PutSession Create or update a walking session start time
+	// (PUT /sessions/{session_id})
+	PutSession(w http.ResponseWriter, r *http.Request, sessionId SessionID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -101,6 +130,12 @@ func (_ Unimplemented) GetHealthz(w http.ResponseWriter, r *http.Request) {
 // GetReadyz Check whether the service is ready
 // (GET /readyz)
 func (_ Unimplemented) GetReadyz(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PutSession Create or update a walking session start time
+// (PUT /sessions/{session_id})
+func (_ Unimplemented) PutSession(w http.ResponseWriter, r *http.Request, sessionId SessionID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -132,6 +167,32 @@ func (siw *ServerInterfaceWrapper) GetReadyz(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadyz(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutSession operation middleware
+func (siw *ServerInterfaceWrapper) PutSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "session_id" -------------
+	var sessionId SessionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session_id", chi.URLParam(r, "session_id"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutSession(w, r, sessionId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -260,6 +321,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/readyz", wrapper.GetReadyz)
 	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/sessions/{session_id}", wrapper.PutSession)
+	})
 
 	return r
 }
@@ -269,19 +333,30 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
