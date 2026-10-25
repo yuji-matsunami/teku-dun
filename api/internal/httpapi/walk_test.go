@@ -131,7 +131,7 @@ func TestWalkHTTPAcceptsSessionLocationAndSteps(t *testing.T) {
 func TestWalkHTTPRejectsInvalidRequests(t *testing.T) {
 	validBody := `{"start_datetime":"2026-01-01T10:00:00Z"}`
 	validPath := "/sessions/" + httpTestSessionID
-	oversizedBody := strings.Repeat("x", maxWalkBodyBytes+1)
+	oversizedBody := strings.Repeat("x", maxRequestBodyBytes+1)
 
 	tests := []struct {
 		name        string
@@ -196,20 +196,6 @@ func TestWalkHTTPRejectsInvalidRequests(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:        "malformed path UUID",
-			path:        "/sessions/not-a-uuid",
-			body:        validBody,
-			contentType: "application/json",
-			wantStatus:  http.StatusBadRequest,
-		},
-		{
-			name:        "zero path UUID",
-			path:        "/sessions/00000000-0000-0000-0000-000000000000",
-			body:        validBody,
-			contentType: "application/json",
-			wantStatus:  http.StatusBadRequest,
-		},
-		{
 			name:        "trailing path segment",
 			path:        validPath + "/extra",
 			body:        validBody,
@@ -234,6 +220,39 @@ func TestWalkHTTPRejectsInvalidRequests(t *testing.T) {
 			}
 			if service.calls() != 0 {
 				t.Fatalf("invalid request reached service %d time(s)", service.calls())
+			}
+		})
+	}
+}
+
+func TestWalkHTTPValidatesUUIDAtEachBoundary(t *testing.T) {
+	tests := []struct {
+		name             string
+		id               string
+		wantServiceCalls int
+	}{
+		{name: "invalid format is rejected by OpenAPI", id: "not-a-uuid"},
+		{name: "nil UUID is rejected by Service", id: "00000000-0000-0000-0000-000000000000", wantServiceCalls: 1},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &walkHTTPTestService{sessionErr: walk.ErrInvalid}
+			response := putWalkTestRequest(
+				newWalkTestRouter(t, service),
+				"/sessions/"+test.id,
+				`{"start_datetime":"2026-01-01T10:00:00Z"}`,
+				"application/json",
+			)
+
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %q, want %d", response.Code, response.Body.String(), http.StatusBadRequest)
+			}
+			if service.sessionCalls != test.wantServiceCalls {
+				t.Fatalf("service calls = %d, want %d", service.sessionCalls, test.wantServiceCalls)
+			}
+			if test.wantServiceCalls == 1 && service.session.ID != test.id {
+				t.Fatalf("service received ID = %q, want %q", service.session.ID, test.id)
 			}
 		})
 	}
