@@ -4,6 +4,11 @@ FROM walk_sessions
 WHERE id = $1
 FOR UPDATE;
 
+-- name: GetSession :one
+SELECT id, start_datetime
+FROM walk_sessions
+WHERE id = $1;
+
 -- name: InsertSession :exec
 INSERT INTO walk_sessions (id, start_datetime)
 VALUES ($1, $2)
