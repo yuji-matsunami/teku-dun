@@ -9,7 +9,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
@@ -26,8 +25,6 @@ const (
 	conflictCode          = "conflict"
 	conflictMessage       = "Request conflicts with stored data."
 )
-
-var canonicalUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // WalkServiceはHTTP層が必要とする歩行データ操作だけを定義する。
 // 業務ルールや永続化の詳細はinternal/walkへ閉じ込める。
@@ -107,18 +104,6 @@ func rejectTrailingJSON(decoder *json.Decoder) error {
 		return errors.New("request body has trailing data")
 	}
 	return nil
-}
-
-func validUUID(value string) bool {
-	if !canonicalUUID.MatchString(value) {
-		return false
-	}
-	for _, character := range value {
-		if character != '-' && character != '0' {
-			return true
-		}
-	}
-	return false
 }
 
 func writeWalkBadRequest(w http.ResponseWriter, message string) {
