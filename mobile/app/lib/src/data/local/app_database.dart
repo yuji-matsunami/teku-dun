@@ -16,7 +16,7 @@ enum QueuedEventKind {
 
 /// The delivery state of a queued event on its way to the server.
 enum QueuedEventStatus {
-  /// Not yet sent.
+  /// Not yet sent, or waiting to be sent again after a failed attempt.
   pending,
 
   /// Currently being sent; not yet acknowledged.
@@ -24,6 +24,11 @@ enum QueuedEventStatus {
 
   /// Sent and acknowledged by the server.
   sent,
+
+  /// Refused by the server in a way that sending the same request again
+  /// cannot fix (for example HTTP 400 or 409). The row is kept rather than
+  /// deleted, and is left alone until it is put back to [pending] by hand.
+  rejected,
 }
 
 /// Events captured on-device, waiting to be sent to the server.
@@ -79,14 +84,28 @@ class QueuedEvents extends Table {
 
   /// When this row was inserted into the queue.
   ///
-  /// Set by SQLite's `CURRENT_TIMESTAMP`, so it has whole-second precision and
-  /// is stored as `YYYY-MM-DD HH:MM:SS` (UTC) rather than the ISO-8601 form
-  /// the other date columns use.
+  /// If an insert leaves it out, SQLite's `CURRENT_TIMESTAMP` fills it in, so
+  /// it has whole-second precision and is stored as `YYYY-MM-DD HH:MM:SS`
+  /// (UTC) rather than the ISO-8601 form the other date columns use. A value
+  /// passed in explicitly is stored in that ISO-8601 form instead.
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 
   /// When the event was successfully sent, if it has been. Callers must pass
   /// UTC values, as for [capturedAt].
   DateTimeColumn get sentAt => dateTime().nullable()();
+
+  /// How many send attempts have failed for this event, whether the failure
+  /// was worth retrying or ended in [QueuedEventStatus.rejected]. Successful
+  /// attempts are not counted.
+  IntColumn get attemptCount => integer().withDefault(const Constant(0))();
+
+  /// Why the latest send attempt failed, for display and debugging. Null until
+  /// an attempt fails, and cleared again once an attempt succeeds.
+  TextColumn get lastError => text().nullable()();
+
+  /// When the latest send attempt finished, whether it succeeded or not.
+  /// Callers must pass UTC values, as for [capturedAt].
+  DateTimeColumn get lastAttemptedAt => dateTime().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

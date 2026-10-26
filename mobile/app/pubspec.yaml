@@ -15,6 +15,7 @@ dependencies:
   flutter_riverpod: ^3.0.3
   teku_dun_api_client:
     path: ../packages/api_client
+  uuid: ^4.6.0
 
 dev_dependencies:
   flutter_test:
