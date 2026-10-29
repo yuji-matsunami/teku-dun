@@ -126,6 +126,41 @@ paths:
           $ref: '#/components/responses/Conflict'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /sessions/{session_id}/steps/{event_id}:
+    put:
+      tags:
+        - walk
+      operationId: putSteps
+      summary: Create or update a steps event
+      description: |
+        Stores a one-minute steps interval measured from the session start.
+        Clients send the final partial interval only when a session ends.
+        Start and end times are immutable. A lower revision is a no-op, an
+        equal revision with equal steps is a no-op, an equal revision with
+        different steps is a conflict, and a higher revision updates the
+        event. The server records the time at which the request is received.
+        Authentication is out of scope for this API contract.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/SessionID'
+        - $ref: '#/components/parameters/EventID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepsRequest'
+      responses:
+        '204':
+          description: Steps event accepted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 components:
   parameters:
     SessionID:
@@ -247,3 +282,30 @@ components:
           format: double
           minimum: 0
           description: Horizontal accuracy in metres.
+    StepsRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - start_datetime
+        - end_datetime
+        - steps
+        - revision
+      properties:
+        start_datetime:
+          type: string
+          format: date-time
+          description: Immutable interval start in RFC 3339 format, aligned to a one-minute interval from the session origin.
+        end_datetime:
+          type: string
+          format: date-time
+          description: Immutable interval end in RFC 3339 format.
+        steps:
+          type: integer
+          format: int32
+          minimum: 0
+          description: Non-negative step count.
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Client revision used for idempotent correction.
