@@ -5,6 +5,7 @@ analysis_options.yaml
 doc/ErrorResponse.md
 doc/HealthApi.md
 doc/HealthResponse.md
+doc/LocationRequest.md
 doc/ReadyResponse.md
 doc/SessionRequest.md
 doc/WalkApi.md
@@ -21,6 +22,7 @@ lib/src/date_serializer.dart
 lib/src/model/date.dart
 lib/src/model/error_response.dart
 lib/src/model/health_response.dart
+lib/src/model/location_request.dart
 lib/src/model/ready_response.dart
 lib/src/model/session_request.dart
 lib/src/serializers.dart
