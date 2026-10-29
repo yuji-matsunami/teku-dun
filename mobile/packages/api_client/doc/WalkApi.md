@@ -10,7 +10,7 @@ All URIs are relative to *http://localhost*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**putLocation**](WalkApi.md#putlocation) | **PUT** /sessions/{session_id}/locations/{event_id} | Store or replay a location event
-[**putSession**](WalkApi.md#putsession) | **PUT** /sessions/{session_id} | Create or update a walking session start time
+[**putSession**](WalkApi.md#putsession) | **PUT** /sessions/{session_id} | Create or replay a walking session
 [**putSteps**](WalkApi.md#putsteps) | **PUT** /sessions/{session_id}/steps/{event_id} | Create or update a steps event
 
 
@@ -63,7 +63,7 @@ No authorization required
 # **putSession**
 > putSession(sessionId, sessionRequest)
 
-Create or update a walking session start time
+Create or replay a walking session
 
 Stores the start time for a walking session. The session identifier is supplied by the client and authentication is out of scope for this API contract. A session is the origin for one-minute step intervals; only the final partial interval is allowed by the client contract. The start time is immutable after the first accepted value. The server records the time at which the request is received. 
 

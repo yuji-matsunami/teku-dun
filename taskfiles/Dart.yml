@@ -135,6 +135,7 @@ tasks:
         bash "$post_process" "$tmp_dir"
         diff -ruN \
           -x '.dart_tool' \
+          -x '.DS_Store' \
           -x 'pubspec.lock' \
           -x '*.g.dart' \
           -x 'test' \
