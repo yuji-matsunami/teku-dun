@@ -8,6 +8,7 @@ doc/HealthResponse.md
 doc/LocationRequest.md
 doc/ReadyResponse.md
 doc/SessionRequest.md
+doc/StepsRequest.md
 doc/WalkApi.md
 lib/src/api.dart
 lib/src/api/health_api.dart
@@ -25,6 +26,7 @@ lib/src/model/health_response.dart
 lib/src/model/location_request.dart
 lib/src/model/ready_response.dart
 lib/src/model/session_request.dart
+lib/src/model/steps_request.dart
 lib/src/serializers.dart
 lib/teku_dun_api_client.dart
 pubspec.yaml

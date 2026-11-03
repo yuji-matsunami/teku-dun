@@ -13,7 +13,8 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(LocationRequest.serializer)
       ..add(ReadyResponse.serializer)
       ..add(ReadyResponseStatusEnum.serializer)
-      ..add(SessionRequest.serializer))
+      ..add(SessionRequest.serializer)
+      ..add(StepsRequest.serializer))
     .build();
 
 // ignore_for_file: deprecated_member_use_from_same_package,type=lint

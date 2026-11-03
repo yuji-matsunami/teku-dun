@@ -19,6 +19,7 @@ import 'package:teku_dun_api_client/src/model/health_response.dart';
 import 'package:teku_dun_api_client/src/model/location_request.dart';
 import 'package:teku_dun_api_client/src/model/ready_response.dart';
 import 'package:teku_dun_api_client/src/model/session_request.dart';
+import 'package:teku_dun_api_client/src/model/steps_request.dart';
 
 part 'serializers.g.dart';
 
@@ -28,6 +29,7 @@ part 'serializers.g.dart';
   LocationRequest,
   ReadyResponse,
   SessionRequest,
+  StepsRequest,
 ])
 Serializers serializers = (_$serializers.toBuilder()
       ..add(const OneOfSerializer())
