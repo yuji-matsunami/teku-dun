@@ -323,6 +323,138 @@ void main() {
       expect(_payload(steps)['steps'], 100);
     });
 
+    test('eventIdなしで同じ区間を保存し直すと、同じidの行を更新して行を増やさない', () async {
+      final sessionId = await enqueueSession();
+      final id = await upsertSteps(sessionId, minute: 1, steps: 10);
+
+      final again = await upsertSteps(sessionId, minute: 1, steps: 25);
+
+      expect(again, id);
+      final row = await _row(database, id);
+      expect(row.revision, 2);
+      expect(_payload(row)['steps'], 25);
+      expect(row.status, QueuedEventStatus.pending);
+      // The session row and a single steps row; saving again added no row.
+      expect(await database.select(database.queuedEvents).get(), hasLength(2));
+    });
+
+    test('送信済みの区間をeventIdなしで保存し直すとpendingに戻りsentAtが消える', () async {
+      final sessionId = await enqueueSession();
+      final id = await upsertSteps(sessionId);
+      await accept(id);
+      expect((await _row(database, id)).sentAt, now);
+
+      final again = await upsertSteps(sessionId, steps: 150);
+
+      expect(again, id);
+      final row = await _row(database, id);
+      expect(row.status, QueuedEventStatus.pending);
+      expect(row.revision, 2);
+      expect(_payload(row)['steps'], 150);
+      expect(row.sentAt, isNull);
+    });
+
+    test('UTC以外のDateTimeで渡しても、同じ瞬間の区間は同じ行を更新する', () async {
+      final sessionId = await enqueueSession();
+      final id = await upsertSteps(sessionId, minute: 1, steps: 10);
+
+      // The upsertSteps helper always passes UTC values, so call the
+      // repository directly.
+      final again = await repository.upsertSteps(
+        sessionId: sessionId,
+        start: sessionStart.add(const Duration(minutes: 1)).toLocal(),
+        end: sessionStart.add(const Duration(minutes: 2)).toLocal(),
+        steps: 25,
+      );
+
+      expect(again, id);
+      final row = await _row(database, id);
+      expect(row.revision, 2);
+      expect(_payload(row), {
+        'start_datetime': '2026-09-29T09:01:00.000Z',
+        'end_datetime': '2026-09-29T09:02:00.000Z',
+        'steps': 25,
+      });
+    });
+
+    test('eventIdなしでも、別の区間なら別の行として追加する', () async {
+      final sessionId = await enqueueSession();
+      final first = await upsertSteps(sessionId, minute: 1, steps: 10);
+
+      final second = await upsertSteps(sessionId, minute: 2, steps: 20);
+
+      expect(second, isNot(first));
+      final firstRow = await _row(database, first);
+      expect(firstRow.revision, 1);
+      expect(_payload(firstRow)['steps'], 10);
+      final secondRow = await _row(database, second);
+      expect(secondRow.capturedAt, DateTime.utc(2026, 9, 29, 9, 2));
+      expect(secondRow.revision, 1);
+      expect(_payload(secondRow)['steps'], 20);
+    });
+
+    test('別セッションの同じ開始時刻の区間は別の行として追加する', () async {
+      final sessionId = await enqueueSession();
+      final otherSessionId = await enqueueSession();
+      final id = await upsertSteps(sessionId, steps: 10);
+
+      final otherId = await upsertSteps(otherSessionId, steps: 20);
+
+      expect(otherId, isNot(id));
+      final row = await _row(database, id);
+      expect(row.sessionId, sessionId);
+      expect(row.revision, 1);
+      expect(_payload(row)['steps'], 10);
+      final otherRow = await _row(database, otherId);
+      expect(otherRow.sessionId, otherSessionId);
+      expect(otherRow.revision, 1);
+      expect(_payload(otherRow)['steps'], 20);
+    });
+
+    test('セッション開始や位置と同じ時刻に始まる区間も、歩数の別の行として追加する', () async {
+      final sessionId = await enqueueSession();
+      final locationId = await enqueueLocation(sessionId, second: 0);
+      final sessionBefore = await _row(database, sessionId);
+      final locationBefore = await _row(database, locationId);
+
+      final id = await upsertSteps(sessionId, minute: 0);
+
+      expect(id, isNot(anyOf(sessionId, locationId)));
+      final row = await _row(database, id);
+      expect(row.kind, QueuedEventKind.steps);
+      expect(row.capturedAt, sessionBefore.capturedAt);
+      expect(row.revision, 1);
+      expect(await _row(database, sessionId), sessionBefore);
+      expect(await _row(database, locationId), locationBefore);
+    });
+
+    test('キューにないeventIdを別の行がある区間に渡すとArgumentErrorになり、何も変えない', () async {
+      final sessionId = await enqueueSession();
+      await upsertSteps(sessionId, minute: 1, steps: 10);
+      final before = await database.select(database.queuedEvents).get();
+
+      await expectLater(
+        upsertSteps(sessionId, eventId: _uuid(50), minute: 1, steps: 25),
+        throwsArgumentError,
+      );
+
+      expect(await database.select(database.queuedEvents).get(), before);
+    });
+
+    test('同じ区間の保存が同時に呼ばれても、行は1つのまま更新する', () async {
+      final sessionId = await enqueueSession();
+
+      final ids = await Future.wait([
+        upsertSteps(sessionId, steps: 10),
+        upsertSteps(sessionId, steps: 25),
+      ]);
+
+      expect(ids.first, ids.last);
+      expect((await _row(database, ids.first)).revision, 2);
+      // The session row and a single steps row.
+      expect(await database.select(database.queuedEvents).get(), hasLength(2));
+    });
+
     test('キューにないセッションの歩数は追加できない', () async {
       await expectLater(upsertSteps(_uuid(99)), throwsArgumentError);
 
