@@ -155,7 +155,7 @@ void main() {
             sessionId: sessionId,
             kind: QueuedEventKind.session,
             capturedAt: DateTime.utc(2026, 9, 29, 9, 0, 0),
-            payload: '{"startedAt":"2026-09-29T09:00:00Z"}',
+            payload: '{"start_datetime":"2026-09-29T09:00:00Z"}',
           ),
         );
 
