@@ -95,20 +95,27 @@ class EventQueueRepository {
   /// Queues the step count of the interval [start] to [end] for [sessionId]
   /// and returns the event's id.
   ///
-  /// Without [eventId], or with an id that is not queued yet, a new event is
-  /// added at revision 1. With the id of a queued steps event, that event is
-  /// updated in place instead: its revision goes up by one, its payload is
-  /// replaced, and it is pending again whatever state it was in (even sent, or
-  /// being sent right now), so the server's copy gets overwritten. [start] and
-  /// [end] must stay the same across revisions; the server rejects changes to
-  /// them.
+  /// The server accepts only one steps event per session and [start], and
+  /// answers a second event id for the same interval with a conflict that
+  /// sending again cannot fix. So an interval is queued only once: a queued
+  /// steps event is updated in place instead of a new one being added. That is
+  /// the event with the id [eventId], or, if [eventId] is omitted, the event of
+  /// [sessionId] that already starts at [start]. Its revision goes up by one,
+  /// its payload is replaced, and it is pending again whatever state it was in
+  /// (even sent, or being sent right now), so the server's copy gets
+  /// overwritten. [start] and [end] must stay the same across revisions; the
+  /// server rejects changes to them.
+  ///
+  /// If there is no such event, a new one is added at revision 1, under
+  /// [eventId] if given.
   ///
   /// The payload holds `start_datetime`, `end_datetime` and `steps`; the
   /// request's `revision` is taken from the revision column when sending.
   ///
   /// Throws an [ArgumentError] if [sessionId] was not queued with
-  /// [enqueueSession], or if [eventId] belongs to something other than a steps
-  /// event of [sessionId].
+  /// [enqueueSession], if [eventId] belongs to something other than a steps
+  /// event of [sessionId], or if [eventId] is not queued but another steps
+  /// event already starts at [start].
   Future<String> upsertSteps({
     required String sessionId,
     String? eventId,
@@ -125,8 +132,17 @@ class EventQueueRepository {
         'steps': steps,
       };
 
-      final existing = eventId == null ? null : await _find(eventId);
+      final inInterval = await _findSteps(sessionId, startUtc);
+      final existing = eventId == null ? inInterval : await _find(eventId);
       if (existing == null) {
+        if (inInterval != null) {
+          throw ArgumentError.value(
+            eventId,
+            'eventId',
+            'is not queued, but steps event ${inInterval.id} already covers '
+                'the interval starting at ${startUtc.toIso8601String()}',
+          );
+        }
         final id = eventId ?? _generateId();
         await _insert(
           id: id,
@@ -345,6 +361,17 @@ class EventQueueRepository {
     return (_database.select(
       _events,
     )..where((t) => t.id.equals(id))).getSingleOrNull();
+  }
+
+  /// The steps event of [sessionId] whose interval starts at [start], if any.
+  Future<QueuedEvent?> _findSteps(String sessionId, DateTime start) {
+    return (_database.select(_events)..where(
+          (t) =>
+              t.sessionId.equals(sessionId) &
+              t.kind.equalsValue(QueuedEventKind.steps) &
+              t.capturedAt.equals(start),
+        ))
+        .getSingleOrNull();
   }
 
   Future<void> _requireSession(String sessionId) async {
