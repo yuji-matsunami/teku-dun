@@ -16,6 +16,7 @@ import 'package:teku_dun_api_client/src/model/date.dart';
 
 import 'package:teku_dun_api_client/src/model/error_response.dart';
 import 'package:teku_dun_api_client/src/model/health_response.dart';
+import 'package:teku_dun_api_client/src/model/location_request.dart';
 import 'package:teku_dun_api_client/src/model/ready_response.dart';
 import 'package:teku_dun_api_client/src/model/session_request.dart';
 
@@ -24,6 +25,7 @@ part 'serializers.g.dart';
 @SerializersFor([
   ErrorResponse,
   HealthResponse,
+  LocationRequest,
   ReadyResponse,
   SessionRequest,
 ])

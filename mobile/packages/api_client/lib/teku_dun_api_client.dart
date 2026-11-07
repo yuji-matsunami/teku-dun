@@ -15,6 +15,7 @@ export 'package:teku_dun_api_client/src/api/walk_api.dart';
 
 export 'package:teku_dun_api_client/src/model/error_response.dart';
 export 'package:teku_dun_api_client/src/model/health_response.dart';
+export 'package:teku_dun_api_client/src/model/location_request.dart';
 export 'package:teku_dun_api_client/src/model/ready_response.dart';
 export 'package:teku_dun_api_client/src/model/session_request.dart';
 
