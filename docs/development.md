@@ -175,10 +175,11 @@ task verify FLUTTER=/private/tmp/flutter-3.47.0/bin/flutter
 - OpenAPIのvalidator検証とRedocly lint
 - Go生成物のドリフト確認、Goテスト、`go vet`
 - DartクライアントのOpenAPI生成物ドリフト確認、`build_runner`生成物確認、analyze、test
-- Flutterアプリのanalyze、test
+- Flutterアプリ（Drift）の`build_runner`再生成と`*.g.dart`の生成物確認、analyze、test
 
 生成物にドリフトがある場合、検証を通すために生成ファイルを直接編集してはいけません。
-後述の生成手順で再生成し、差分の原因となった契約または生成設定をレビューしてください。
+後述の生成手順で再生成し、差分の原因となった契約、テーブル定義、または生成設定を
+レビューしてください。
 
 ## DB込みの統合スモークテスト
 
@@ -269,6 +270,33 @@ task dart:verify
 task api:verify
 task flutter:verify
 ```
+
+## Drift生成コードの更新
+
+Flutterアプリの端末内DBは、`mobile/app/lib/src/data/local/app_database.dart`の
+テーブル定義から`app_database.g.dart`を生成します。テーブル定義（列のコメントを含む）や
+`mobile/app/build.yaml`の生成設定を変更した場合は、生成物を手作業で編集せず、
+次の手順で再生成して確認します。
+
+```sh
+task flutter:build
+git add mobile/app/lib/src/data/local/app_database.g.dart
+task flutter:verify
+```
+
+`task flutter:build`は`flutter pub get`の後に`build_runner`を実行します。Flutterは既定で
+`fvm flutter`を使い、`FLUTTER`変数で上書きできます（例: `task flutter:build FLUTTER=flutter`）。
+列のドキュメントコメントも生成コードへコピーされるため、コメントだけの変更でも再生成が
+必要です。再生成した`*.g.dart`はテーブル定義の変更と一緒にレビューしてコミットします。
+生成された`*.g.dart`を手で編集してはいけません。
+
+`task flutter:verify`は`build_runner`を再実行した後、`mobile/app`配下の`*.g.dart`が
+Gitのインデックス（ステージ済みまたはコミット済みの内容）と一致すること、未追跡の
+`*.g.dart`がないことを確認します。再生成した差分を`git add`する前に実行すると、
+ドリフトとして失敗します。
+
+配布前のスキーマ変更の扱い（`schemaVersion`とアプリデータの消去）は
+[Flutterアプリ（mobile/app）のREADME](../mobile/app/README.md)を参照してください。
 
 ## 停止と再開
 
