@@ -15,6 +15,8 @@ import (
 	"github.com/yuji-matsunami/teku-dun/api/internal/config"
 	"github.com/yuji-matsunami/teku-dun/api/internal/httpapi"
 	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
+	"github.com/yuji-matsunami/teku-dun/api/internal/walk"
+	walkpostgres "github.com/yuji-matsunami/teku-dun/api/internal/walk/postgres"
 )
 
 func main() {
@@ -38,9 +40,18 @@ func run(parent context.Context) error {
 	}
 	defer db.Close()
 	postGIS := postGISChecker{pool: db}
+	walkRepository := walkpostgres.NewRepository(db)
+	walkService := walk.NewService(walkRepository)
+
+	requestValidator, err := httpapi.NewOpenAPIRequestValidator()
+	if err != nil {
+		return fmt.Errorf("OpenAPI request validator setup failed: %w", err)
+	}
 
 	router := chi.NewRouter()
-	openapi.HandlerFromMux(httpapi.NewHandler(postGIS, cfg.DBPingTimeout), router)
+	router.Use(httpapi.ValidateRequestBody, requestValidator)
+	handler := httpapi.NewHandler(postGIS, cfg.DBPingTimeout).WithWalkService(walkService)
+	openapi.HandlerFromMux(handler, router)
 	server := &http.Server{
 		Addr:              cfg.Address,
 		Handler:           router,
