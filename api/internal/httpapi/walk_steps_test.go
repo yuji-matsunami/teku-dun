@@ -123,6 +123,89 @@ func TestPutStepsRejectsInvalidRequestBeforeService(t *testing.T) {
 	}
 }
 
+func TestPutStepsValidatesRFC3339OffsetsAtHTTPBoundary(t *testing.T) {
+	tests := []struct {
+		name       string
+		start      string
+		end        string
+		wantStatus int
+		wantCalls  int
+	}{
+		{
+			name:       "positive 24-hour offset",
+			start:      "2026-01-01T10:01:00+24:00",
+			end:        "2026-01-01T10:02:00Z",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "negative 24-hour offset",
+			start:      "2026-01-01T10:01:00-24:00",
+			end:        "2026-01-01T10:02:00Z",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "minute 60 in start offset",
+			start:      "2026-01-01T10:01:00+00:60",
+			end:        "2026-01-01T10:02:00Z",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "minute 60 in end offset",
+			start:      "2026-01-01T10:01:00Z",
+			end:        "2026-01-01T10:02:00+09:60",
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "positive maximum offset",
+			start:      "2026-01-01T10:01:00+23:59",
+			end:        "2026-01-01T10:02:00Z",
+			wantStatus: http.StatusNoContent,
+			wantCalls:  1,
+		},
+		{
+			name:       "negative maximum offset",
+			start:      "2026-01-01T10:01:00-23:59",
+			end:        "2026-01-01T10:02:00Z",
+			wantStatus: http.StatusNoContent,
+			wantCalls:  1,
+		},
+		{
+			name:       "ordinary offset",
+			start:      "2026-01-01T10:01:00+09:00",
+			end:        "2026-01-01T10:02:00Z",
+			wantStatus: http.StatusNoContent,
+			wantCalls:  1,
+		},
+		{
+			name:       "UTC with fractional seconds",
+			start:      "2026-01-01T10:01:00.123456789Z",
+			end:        "2026-01-01T10:02:00Z",
+			wantStatus: http.StatusNoContent,
+			wantCalls:  1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &stepsHTTPTestService{}
+			body := `{"start_datetime":"` + test.start + `","end_datetime":"` + test.end + `","steps":90,"revision":2}`
+			request := httptest.NewRequest(http.MethodPut, stepsTestPath, strings.NewReader(body))
+
+			response := putStepsTestRequest(requestValidationHandler(t, service), request)
+
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, body = %q, want %d", response.Code, response.Body.String(), test.wantStatus)
+			}
+			if service.calls != test.wantCalls {
+				t.Fatalf("service calls = %d, want %d", service.calls, test.wantCalls)
+			}
+			if test.wantStatus == http.StatusBadRequest && !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
+				t.Errorf("body = %q, want invalid_request", response.Body.String())
+			}
+		})
+	}
+}
+
 func TestPutStepsMapsServiceErrors(t *testing.T) {
 	secret := "postgres://user:secret-password@db.example.test:5432/teku_dun"
 	tests := []struct {

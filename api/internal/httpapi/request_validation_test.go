@@ -82,6 +82,72 @@ func TestOpenAPIRequestValidationRejectsInvalidSessionRequests(t *testing.T) {
 	}
 }
 
+func TestOpenAPIRequestValidationValidatesRFC3339Offsets(t *testing.T) {
+	validator, err := NewOpenAPIRequestValidator()
+	if err != nil {
+		t.Fatalf("create request validator: %v", err)
+	}
+	tests := []struct {
+		name       string
+		path       string
+		body       string
+		wantStatus int
+		wantNext   bool
+	}{
+		{
+			name:       "session rejects 24-hour offset",
+			path:       "/sessions/00000000-0000-4000-8000-000000000001",
+			body:       `{"start_datetime":"2026-01-01T10:01:00+24:00"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "location rejects minute 60 offset",
+			path:       "/sessions/00000000-0000-4000-8000-000000000001/locations/20000000-0000-4000-8000-000000000002",
+			body:       `{"recorded_at":"2026-01-01T10:01:00+09:60","latitude":35,"longitude":139,"accuracy_m":5}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "session accepts maximum offset",
+			path:       "/sessions/00000000-0000-4000-8000-000000000001",
+			body:       `{"start_datetime":"2026-01-01T10:01:00+23:59"}`,
+			wantStatus: http.StatusNoContent,
+			wantNext:   true,
+		},
+		{
+			name:       "location accepts UTC fractional seconds",
+			path:       "/sessions/00000000-0000-4000-8000-000000000001/locations/20000000-0000-4000-8000-000000000002",
+			body:       `{"recorded_at":"2026-01-01T10:01:00.123456789Z","latitude":35,"longitude":139,"accuracy_m":5}`,
+			wantStatus: http.StatusNoContent,
+			wantNext:   true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			nextCalled := false
+			handler := ValidateRequestBody(validator(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				nextCalled = true
+				w.WriteHeader(http.StatusNoContent)
+			})))
+			request := httptest.NewRequest(http.MethodPut, test.path, strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+
+			handler.ServeHTTP(recorder, request)
+
+			if recorder.Code != test.wantStatus {
+				t.Fatalf("status = %d, body = %q, want %d", recorder.Code, recorder.Body.String(), test.wantStatus)
+			}
+			if nextCalled != test.wantNext {
+				t.Errorf("next handler called = %t, want %t", nextCalled, test.wantNext)
+			}
+			if test.wantStatus == http.StatusBadRequest && !strings.Contains(recorder.Body.String(), `"code":"invalid_request"`) {
+				t.Errorf("body = %q, want invalid_request", recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestValidateRequestBodyRejectsOversizedKnownAndUnknownLengths(t *testing.T) {
 	body := `{"start_datetime":"2025-01-02T03:04:05Z","padding":"` + strings.Repeat("x", maxRequestBodyBytes) + `"}`
 	for _, unknownLength := range []bool{false, true} {
