@@ -101,6 +101,21 @@ type SessionRequest struct {
 	StartDatetime time.Time `json:"start_datetime"`
 }
 
+// StepsRequest defines model for StepsRequest.
+type StepsRequest struct {
+	// EndDatetime Immutable interval end in RFC 3339 format.
+	EndDatetime time.Time `json:"end_datetime"`
+
+	// Revision Client revision used for idempotent correction.
+	Revision int64 `json:"revision"`
+
+	// StartDatetime Immutable interval start in RFC 3339 format, aligned to a one-minute interval from the session origin.
+	StartDatetime time.Time `json:"start_datetime"`
+
+	// Steps Non-negative step count.
+	Steps int32 `json:"steps"`
+}
+
 // EventID defines model for EventID.
 type EventID = string
 
@@ -125,6 +140,9 @@ type PutSessionJSONRequestBody = SessionRequest
 // PutLocationJSONRequestBody defines body for PutLocation for application/json ContentType.
 type PutLocationJSONRequestBody = LocationRequest
 
+// PutStepsJSONRequestBody defines body for PutSteps for application/json ContentType.
+type PutStepsJSONRequestBody = StepsRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetHealthz Check whether the service is alive
@@ -139,6 +157,9 @@ type ServerInterface interface {
 	// PutLocation Store or replay a location event
 	// (PUT /sessions/{session_id}/locations/{event_id})
 	PutLocation(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID)
+	// PutSteps Create or update a steps event
+	// (PUT /sessions/{session_id}/steps/{event_id})
+	PutSteps(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -166,6 +187,12 @@ func (_ Unimplemented) PutSession(w http.ResponseWriter, r *http.Request, sessio
 // PutLocation Store or replay a location event
 // (PUT /sessions/{session_id}/locations/{event_id})
 func (_ Unimplemented) PutLocation(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// PutSteps Create or update a steps event
+// (PUT /sessions/{session_id}/steps/{event_id})
+func (_ Unimplemented) PutSteps(w http.ResponseWriter, r *http.Request, sessionId SessionID, eventId EventID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -258,6 +285,41 @@ func (siw *ServerInterfaceWrapper) PutLocation(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PutLocation(w, r, sessionId, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutSteps operation middleware
+func (siw *ServerInterfaceWrapper) PutSteps(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "session_id" -------------
+	var sessionId SessionID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session_id", chi.URLParam(r, "session_id"), &sessionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "event_id" -------------
+	var eventId EventID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "event_id", chi.URLParam(r, "event_id"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "event_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutSteps(w, r, sessionId, eventId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -392,6 +454,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/sessions/{session_id}/locations/{event_id}", wrapper.PutLocation)
 	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/sessions/{session_id}/steps/{event_id}", wrapper.PutSteps)
+	})
 
 	return r
 }
@@ -401,35 +466,40 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"tCke0AtpzqTJ4eR/AQAA//8=",
+	"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",
+	"FHS5giuoOZUW+4v/BgAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
