@@ -4,6 +4,7 @@ import 'package:teku_dun_api_client/teku_dun_api_client.dart';
 
 import '../config/app_config.dart';
 import '../data/local/app_database.dart';
+import '../data/local/event_queue_repository.dart';
 import '../gateway/health_gateway.dart';
 
 final appConfigProvider = Provider<AppConfig>((ref) {
@@ -14,6 +15,10 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
   final db = AppDatabase(driftDatabase(name: 'teku_dun'));
   ref.onDispose(db.close);
   return db;
+});
+
+final eventQueueRepositoryProvider = Provider<EventQueueRepository>((ref) {
+  return EventQueueRepository(ref.watch(appDatabaseProvider));
 });
 
 final apiClientProvider = Provider<TekuDunApiClient>((ref) {
