@@ -7,6 +7,7 @@ set -eu
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/teku-dun-postgis-test.XXXXXX")"
 cid_file="$tmp_dir/cid"
 container_id=''
+test_pid=''
 
 cleanup() {
   exit_code=$?
@@ -21,9 +22,23 @@ cleanup() {
   rm -rf "$tmp_dir" || true
   exit "$exit_code"
 }
+signal_exit() {
+  signal_status=$1
+  trap '' INT TERM
+  set +u
+  if [ "$test_pid" = 'starting' ]; then
+    test_pid=$!
+  fi
+  if [ -n "$test_pid" ]; then
+    kill -TERM -"$test_pid" >/dev/null 2>&1 || kill -TERM "$test_pid" >/dev/null 2>&1 || true
+    wait "$test_pid" 2>/dev/null || true
+    test_pid=''
+  fi
+  exit "$signal_status"
+}
 trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap 'signal_exit 130' INT
+trap 'signal_exit 143' TERM
 
 docker run --detach --rm \
   --cidfile "$cid_file" \
@@ -55,8 +70,17 @@ case "$host_port" in
     ;;
 esac
 
-(
-  cd api
-  TEST_DATABASE_URL="postgres://walk_test:walk_test@127.0.0.1:${host_port}/walk_test?sslmode=disable" \
-    go test -race -count=1 ./internal/httpapi -run '^TestWalkHTTPPostGIS$'
-)
+cd api
+set -m
+test_pid='starting'
+TEST_DATABASE_URL="postgres://walk_test:walk_test@127.0.0.1:${host_port}/walk_test?sslmode=disable" \
+  go test -race -count=1 ./internal/httpapi -run '^TestWalkHTTPPostGIS$' &
+test_pid=$!
+if wait "$test_pid"; then
+  test_status=0
+else
+  test_status=$?
+fi
+set +m
+test_pid=''
+exit "$test_status"
