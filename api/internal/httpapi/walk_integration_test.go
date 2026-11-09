@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -54,12 +55,22 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	}
 	defer pool.Close()
 	_, file, _, _ := runtime.Caller(0)
-	migration, err := os.ReadFile(filepath.Join(filepath.Dir(file), "../../../db/migrations/000002_walk_events.up.sql"))
+	migrations, err := filepath.Glob(filepath.Join(filepath.Dir(file), "../../../db/migrations/*.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, string(migration)); err != nil {
-		t.Fatal(err)
+	if len(migrations) == 0 {
+		t.Fatal("no up migrations found")
+	}
+	sort.Strings(migrations)
+	for _, migrationPath := range migrations {
+		migration, err := os.ReadFile(migrationPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, string(migration)); err != nil {
+			t.Fatalf("apply migration %s: %v", filepath.Base(migrationPath), err)
+		}
 	}
 	h := NewHandler(pool, time.Second).WithWalkService(walk.NewService(walkpostgres.NewRepository(pool)))
 	validator, err := NewOpenAPIRequestValidator()
@@ -140,6 +151,24 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	if !correctedFirstReceived.Equal(firstReceived) || !correctedLastReceived.After(initialLastReceived) {
 		t.Fatal("step correction did not preserve first_received_at and advance last_received_at")
 	}
+	if _, err := pool.Exec(ctx, `UPDATE step_events SET last_received_at='2000-01-01T00:00:00Z' WHERE id='30000000-0000-4000-8000-000000000001'`); err != nil {
+		t.Fatal(err)
+	}
+	var sameRevisionLastReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_received_at FROM step_events WHERE id='30000000-0000-4000-8000-000000000001'`).Scan(&sameRevisionLastReceived); err != nil {
+		t.Fatal(err)
+	}
+	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":90,"revision":2}`, 204)
+	var replayedCorrectionLastReceived time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_received_at FROM step_events WHERE id='30000000-0000-4000-8000-000000000001'`).Scan(&replayedCorrectionLastReceived); err != nil {
+		t.Fatal(err)
+	}
+	if !replayedCorrectionLastReceived.Equal(sameRevisionLastReceived) {
+		t.Fatal("same-revision step replay changed last_received_at")
+	}
+	if _, err := pool.Exec(ctx, `UPDATE step_events SET last_received_at=$1 WHERE id='30000000-0000-4000-8000-000000000001'`, correctedLastReceived); err != nil {
+		t.Fatal(err)
+	}
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":100,"revision":1}`, 204)
 	var staleFirstReceived, staleLastReceived time.Time
 	if err := pool.QueryRow(ctx, `SELECT first_received_at, last_received_at FROM step_events WHERE id='30000000-0000-4000-8000-000000000001'`).Scan(&staleFirstReceived, &staleLastReceived); err != nil {
@@ -149,35 +178,13 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 		t.Fatal("stale step replay changed receive timestamps")
 	}
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":80,"revision":2}`, 409)
-	var corrections sync.WaitGroup
-	correctionStatuses := make(chan int, 2)
-	startCorrections := make(chan struct{})
-	for _, body := range []string{
-		`{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":95,"revision":3}`,
+	assertConcurrentStepCorrections(t, ctx, admin, pool, router, applicationName, steps,
 		`{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":98,"revision":4}`,
-	} {
-		corrections.Add(1)
-		go func(body string) {
-			defer corrections.Done()
-			<-startCorrections
-			req := httptest.NewRequest(http.MethodPut, steps, strings.NewReader(body))
-			requestContext, cancel := context.WithTimeout(req.Context(), 5*time.Second)
-			defer cancel()
-			req = req.WithContext(requestContext)
-			req.Header.Set("Content-Type", "application/json")
-			res := httptest.NewRecorder()
-			router.ServeHTTP(res, req)
-			correctionStatuses <- res.Code
-		}(body)
-	}
-	close(startCorrections)
-	corrections.Wait()
-	close(correctionStatuses)
-	for status := range correctionStatuses {
-		if status != http.StatusNoContent {
-			t.Fatalf("concurrent correction status = %d, want %d", status, http.StatusNoContent)
-		}
-	}
+		`{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":95,"revision":3}`)
+	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:19Z","steps":98,"revision":5}`, 409)
+	put(location, `{"recorded_at":"2026-01-01T10:00:31Z","latitude":35.5,"longitude":139.5,"accuracy_m":3}`, 409)
+	put(location, `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.5,"longitude":139.6,"accuracy_m":3}`, 409)
+	put(location, `{"recorded_at":"2026-01-01T10:00:30Z","latitude":35.5,"longitude":139.5,"accuracy_m":4}`, 409)
 	put(session+"/steps/30000000-0000-4000-8000-000000000002", `{"start_datetime":"2026-01-01T10:01:20Z","end_datetime":"2026-01-01T10:01:45Z","steps":0,"revision":1}`, 204)
 	put(session+"/steps/30000000-0000-4000-8000-000000000003", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":100,"revision":1}`, 409)
 	put(session+"/steps/30000000-0000-4000-8000-000000000004", `{"start_datetime":"2026-01-01T10:01:21Z","end_datetime":"2026-01-01T10:01:45Z","steps":1,"revision":1}`, 400)
@@ -352,6 +359,120 @@ func waitForBlockedStepInserts(ctx context.Context, admin *pgxpool.Pool, applica
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("timed out waiting for two blocked INSERTs; found %d: %w", blocked, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func assertConcurrentStepCorrections(
+	t *testing.T,
+	ctx context.Context,
+	admin, pool *pgxpool.Pool,
+	router http.Handler,
+	applicationName, path, newerBody, olderBody string,
+) {
+	t.Helper()
+
+	lockTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockHeld := true
+	requestCtx, cancelRequests := context.WithTimeout(ctx, 10*time.Second)
+	var requests sync.WaitGroup
+	statuses := make(chan struct {
+		revision int
+		status   int
+	}, 2)
+	defer func() {
+		if lockHeld {
+			_ = lockTx.Rollback(context.Background())
+		}
+		cancelRequests()
+		requestsDone := make(chan struct{})
+		go func() {
+			requests.Wait()
+			close(requestsDone)
+		}()
+		select {
+		case <-requestsDone:
+		case <-time.After(5 * time.Second):
+			t.Error("concurrent step correction requests did not stop after lock release and cancellation")
+		}
+	}()
+
+	var lockedID string
+	if err := lockTx.QueryRow(ctx, `SELECT id FROM step_events WHERE id='30000000-0000-4000-8000-000000000001' FOR UPDATE`).Scan(&lockedID); err != nil {
+		t.Fatal(err)
+	}
+	startCorrection := func(revision int, body string) {
+		requests.Add(1)
+		go func() {
+			defer requests.Done()
+			req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body)).WithContext(requestCtx)
+			req.Header.Set("Content-Type", "application/json")
+			res := httptest.NewRecorder()
+			router.ServeHTTP(res, req)
+			statuses <- struct {
+				revision int
+				status   int
+			}{revision: revision, status: res.Code}
+		}()
+	}
+
+	startCorrection(4, newerBody)
+	pollCtx, cancelPoll := context.WithTimeout(requestCtx, 8*time.Second)
+	err = waitForBlockedStepQueries(pollCtx, admin, applicationName, 1)
+	cancelPoll()
+	if err != nil {
+		t.Fatalf("waiting for revision 4 step query to block: %v", err)
+	}
+
+	startCorrection(3, olderBody)
+	pollCtx, cancelPoll = context.WithTimeout(requestCtx, 8*time.Second)
+	err = waitForBlockedStepQueries(pollCtx, admin, applicationName, 2)
+	cancelPoll()
+	if err != nil {
+		t.Fatalf("waiting for revisions 4 and 3 step queries to block: %v", err)
+	}
+
+	if err := lockTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lockHeld = false
+
+	for range 2 {
+		select {
+		case result := <-statuses:
+			if result.status != http.StatusNoContent {
+				t.Fatalf("revision %d concurrent correction status = %d, want %d", result.revision, result.status, http.StatusNoContent)
+			}
+		case <-requestCtx.Done():
+			t.Fatalf("waiting for concurrent correction responses: %v", requestCtx.Err())
+		}
+	}
+}
+
+func waitForBlockedStepQueries(ctx context.Context, admin *pgxpool.Pool, applicationName string, want int) error {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var blocked int
+		if err := admin.QueryRow(ctx, `
+			SELECT count(*)
+			FROM pg_stat_activity
+			WHERE application_name = $1
+			  AND wait_event_type = 'Lock'
+			  AND (query ILIKE '%FROM step_events%' OR query ILIKE '%UPDATE step_events%')
+		`, applicationName).Scan(&blocked); err != nil {
+			return err
+		}
+		if blocked == want {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for %d blocked step queries; found %d: %w", want, blocked, ctx.Err())
 		case <-ticker.C:
 		}
 	}

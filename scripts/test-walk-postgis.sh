@@ -10,14 +10,20 @@ container_id=''
 
 cleanup() {
   exit_code=$?
-  trap - EXIT INT TERM
+  trap - EXIT
+  trap '' INT TERM
+  if [ -z "$container_id" ] && [ -s "$cid_file" ]; then
+    container_id="$(cat "$cid_file" 2>/dev/null || true)"
+  fi
   if [ -n "$container_id" ]; then
     docker rm -f "$container_id" >/dev/null 2>&1 || true
   fi
-  rm -rf "$tmp_dir"
+  rm -rf "$tmp_dir" || true
   exit "$exit_code"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 docker run --detach --rm \
   --cidfile "$cid_file" \
