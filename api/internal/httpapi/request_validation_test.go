@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk"
 )
 
@@ -29,13 +27,10 @@ func (*requestValidationWalkService) PutSteps(context.Context, walk.Steps) error
 
 func requestValidationHandler(t *testing.T, service WalkService) http.Handler {
 	t.Helper()
-	validator, err := NewOpenAPIRequestValidator()
+	router, err := NewRouter(NewHandler(nil, time.Second).WithWalkService(service))
 	if err != nil {
-		t.Fatalf("create request validator: %v", err)
+		t.Fatalf("create HTTP router: %v", err)
 	}
-	router := chi.NewRouter()
-	router.Use(ValidateRequestBody, validator)
-	openapi.HandlerFromMux(NewHandler(nil, time.Second).WithWalkService(service), router)
 	return router
 }
 

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,12 +15,38 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk"
 	walkpostgres "github.com/yuji-matsunami/teku-dun/api/internal/walk/postgres"
 )
+
+type httpPutResult struct {
+	statusCode int
+	body       []byte
+	err        error
+}
+
+func sendHTTPPut(ctx context.Context, client *http.Client, serverURL, path, body string) httpPutResult {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, serverURL+path, strings.NewReader(body))
+	if err != nil {
+		return httpPutResult{err: fmt.Errorf("create PUT request: %w", err)}
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := client.Do(request)
+	if err != nil {
+		return httpPutResult{err: fmt.Errorf("send PUT request: %w", err)}
+	}
+	responseBody, readErr := io.ReadAll(response.Body)
+	closeErr := response.Body.Close()
+	if readErr != nil {
+		return httpPutResult{statusCode: response.StatusCode, err: fmt.Errorf("read PUT response body: %w", readErr)}
+	}
+	if closeErr != nil {
+		return httpPutResult{statusCode: response.StatusCode, err: fmt.Errorf("close PUT response body: %w", closeErr)}
+	}
+	return httpPutResult{statusCode: response.StatusCode, body: responseBody}
+}
 
 // 各テスト専用のスキーマを使う。TEST_DATABASE_URLには破棄可能なPostGISデータベースを指定する。
 func TestWalkHTTPPostGIS(t *testing.T) {
@@ -73,23 +100,25 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 		}
 	}
 	h := NewHandler(pool, time.Second).WithWalkService(walk.NewService(walkpostgres.NewRepository(pool)))
-	validator, err := NewOpenAPIRequestValidator()
+	router, err := NewRouter(h)
 	if err != nil {
-		t.Fatalf("create request validator: %v", err)
+		t.Fatalf("create HTTP router: %v", err)
 	}
-	router := chi.NewRouter()
-	router.Use(ValidateRequestBody, validator)
-	openapi.HandlerFromMux(h, router)
+	server := httptest.NewServer(router)
+	defer server.Close()
+	client := server.Client()
 	put := func(path, body string, want int) {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		res := httptest.NewRecorder()
-		router.ServeHTTP(res, req)
-		if res.Code != want {
-			t.Fatalf("PUT %s: got %d (%s), want %d", path, res.Code, res.Body.String(), want)
+		requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		result := sendHTTPPut(requestCtx, client, server.URL, path, body)
+		if result.err != nil {
+			t.Fatalf("PUT %s failed: %v", path, result.err)
 		}
-		if want == http.StatusNoContent && res.Body.Len() != 0 {
+		if result.statusCode != want {
+			t.Fatalf("PUT %s: got %d (%s), want %d", path, result.statusCode, result.body, want)
+		}
+		if want == http.StatusNoContent && len(result.body) != 0 {
 			t.Fatal("204 response must be empty")
 		}
 	}
@@ -178,7 +207,7 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 		t.Fatal("stale step replay changed receive timestamps")
 	}
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":80,"revision":2}`, 409)
-	assertConcurrentStepCorrections(t, ctx, admin, pool, router, applicationName, steps,
+	assertConcurrentStepCorrections(t, ctx, admin, pool, client, server.URL, applicationName, steps,
 		`{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":98,"revision":4}`,
 		`{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":95,"revision":3}`)
 	put(steps, `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:19Z","steps":98,"revision":5}`, 409)
@@ -192,7 +221,7 @@ func TestWalkHTTPPostGIS(t *testing.T) {
 	put(session+"/steps/30000000-0000-4000-8000-000000000007", `{"start_datetime":"2026-01-01T10:00:19Z","end_datetime":"2026-01-01T10:01:19Z","steps":1,"revision":1}`, 400)
 	put(otherSession+"/steps/30000000-0000-4000-8000-000000000001", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":98,"revision":4}`, 409)
 	put(missingSession+"/steps/30000000-0000-4000-8000-000000000099", `{"start_datetime":"2026-01-01T10:00:20Z","end_datetime":"2026-01-01T10:01:20Z","steps":1,"revision":1}`, 404)
-	assertConcurrentInitialStepPut(t, ctx, admin, pool, router, applicationName,
+	assertConcurrentInitialStepPut(t, ctx, admin, pool, client, server.URL, applicationName,
 		session+"/steps/30000000-0000-4000-8000-000000000006",
 		`{"start_datetime":"2026-01-01T10:04:20Z","end_datetime":"2026-01-01T10:05:20Z","steps":42,"revision":1}`)
 	var simultaneousCount int
@@ -259,7 +288,8 @@ func assertConcurrentInitialStepPut(
 	t *testing.T,
 	ctx context.Context,
 	admin, pool *pgxpool.Pool,
-	router http.Handler,
+	client *http.Client,
+	serverURL string,
 	applicationName, path, body string,
 ) {
 	t.Helper()
@@ -290,18 +320,14 @@ func assertConcurrentInitialStepPut(
 	}
 
 	startRequests := make(chan struct{})
-	statuses := make(chan int, 2)
+	results := make(chan httpPutResult, 2)
 	var requests sync.WaitGroup
 	for range 2 {
 		requests.Add(1)
 		go func() {
 			defer requests.Done()
 			<-startRequests
-			req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body)).WithContext(requestCtx)
-			req.Header.Set("Content-Type", "application/json")
-			res := httptest.NewRecorder()
-			router.ServeHTTP(res, req)
-			statuses <- res.Code
+			results <- sendHTTPPut(requestCtx, client, serverURL, path, body)
 		}()
 	}
 	requestsStarted = true
@@ -324,9 +350,12 @@ func assertConcurrentInitialStepPut(
 
 	for range 2 {
 		select {
-		case status := <-statuses:
-			if status != http.StatusNoContent {
-				t.Fatalf("concurrent initial step status = %d, want %d", status, http.StatusNoContent)
+		case result := <-results:
+			if result.err != nil {
+				t.Fatalf("concurrent initial step request failed: %v", result.err)
+			}
+			if result.statusCode != http.StatusNoContent {
+				t.Fatalf("concurrent initial step status = %d, want %d", result.statusCode, http.StatusNoContent)
 			}
 		case <-requestCtx.Done():
 			t.Fatalf("waiting for concurrent step responses: %v", requestCtx.Err())
@@ -368,7 +397,8 @@ func assertConcurrentStepCorrections(
 	t *testing.T,
 	ctx context.Context,
 	admin, pool *pgxpool.Pool,
-	router http.Handler,
+	client *http.Client,
+	serverURL string,
 	applicationName, path, newerBody, olderBody string,
 ) {
 	t.Helper()
@@ -382,7 +412,7 @@ func assertConcurrentStepCorrections(
 	var requests sync.WaitGroup
 	statuses := make(chan struct {
 		revision int
-		status   int
+		result   httpPutResult
 	}, 2)
 	defer func() {
 		if lockHeld {
@@ -409,14 +439,10 @@ func assertConcurrentStepCorrections(
 		requests.Add(1)
 		go func() {
 			defer requests.Done()
-			req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(body)).WithContext(requestCtx)
-			req.Header.Set("Content-Type", "application/json")
-			res := httptest.NewRecorder()
-			router.ServeHTTP(res, req)
 			statuses <- struct {
 				revision int
-				status   int
-			}{revision: revision, status: res.Code}
+				result   httpPutResult
+			}{revision: revision, result: sendHTTPPut(requestCtx, client, serverURL, path, body)}
 		}()
 	}
 
@@ -444,8 +470,11 @@ func assertConcurrentStepCorrections(
 	for range 2 {
 		select {
 		case result := <-statuses:
-			if result.status != http.StatusNoContent {
-				t.Fatalf("revision %d concurrent correction status = %d, want %d", result.revision, result.status, http.StatusNoContent)
+			if result.result.err != nil {
+				t.Fatalf("revision %d concurrent correction request failed: %v", result.revision, result.result.err)
+			}
+			if result.result.statusCode != http.StatusNoContent {
+				t.Fatalf("revision %d concurrent correction status = %d, want %d", result.revision, result.result.statusCode, http.StatusNoContent)
 			}
 		case <-requestCtx.Done():
 			t.Fatalf("waiting for concurrent correction responses: %v", requestCtx.Err())
