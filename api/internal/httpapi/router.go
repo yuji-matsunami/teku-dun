@@ -7,7 +7,7 @@ import (
 	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
 )
 
-// NewRouter builds the HTTP handler used by the API server.
+// NewRouterは、入力検証とOpenAPIのルーティングを組み合わせたAPIサーバーのHTTPハンドラーを生成する。
 func NewRouter(h *Handler) (http.Handler, error) {
 	requestValidator, err := NewOpenAPIRequestValidator()
 	if err != nil {
