@@ -226,6 +226,48 @@ void main() {
     );
   });
 
+  group('captured_atの並び順', () {
+    Future<void> insertAt(String id, DateTime capturedAt) {
+      return database
+          .into(database.queuedEvents)
+          .insert(
+            QueuedEventsCompanion.insert(
+              id: id,
+              sessionId: sessionId,
+              kind: QueuedEventKind.location,
+              capturedAt: capturedAt,
+              payload: '{}',
+            ),
+          );
+    }
+
+    Future<List<String>> idsByCapturedAt() async {
+      final rows = await database
+          .customSelect('SELECT id FROM queued_events ORDER BY captured_at')
+          .get();
+      return [for (final row in rows) row.read<String>('id')];
+    }
+
+    test('ミリ秒に揃えたUTCの日時は時刻順に並ぶ', () async {
+      // Inserted out of order; the whole second has a zero fraction, which is
+      // still printed with 3 digits.
+      await insertAt('c', DateTime.utc(2026, 9, 29, 12, 0, 1));
+      await insertAt('a', DateTime.utc(2026, 9, 29, 12, 0, 0, 499));
+      await insertAt('b', DateTime.utc(2026, 9, 29, 12, 0, 0, 500));
+
+      expect(await idsByCapturedAt(), ['a', 'b', 'c']);
+    });
+
+    test('マイクロ秒の有無が混ざると時刻順に並ばない', () async {
+      // The premise stated in app_database.dart: the fraction has 6 digits
+      // only when the microseconds are not zero, and `Z` sorts after digits.
+      await insertAt('earlier', DateTime.utc(2026, 9, 29, 12, 0, 0, 500));
+      await insertAt('later', DateTime.utc(2026, 9, 29, 12, 0, 0, 500, 1));
+
+      expect(await idsByCapturedAt(), ['later', 'earlier']);
+    });
+  });
+
   test('kindとstatusは列挙値の名前の文字列で保存される', () async {
     // The stored text outlives app versions, so the expectations are string
     // literals rather than the enum's name. Renaming a value would stop
