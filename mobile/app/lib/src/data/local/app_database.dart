@@ -55,10 +55,13 @@ class QueuedEvents extends Table {
   /// [QueuedEventKind.session], the fix time for [QueuedEventKind.location],
   /// or the interval start time for [QueuedEventKind.steps].
   ///
-  /// Callers must pass UTC values (`DateTime.toUtc`); this is not enforced.
-  /// Dates are stored as ISO-8601 text, in which UTC ends in `Z` but local
-  /// time carries a UTC offset. Mixing the two would make the text order used
-  /// by the `(status, captured_at)` index differ from chronological order.
+  /// Callers must pass UTC values (`DateTime.toUtc`) truncated to whole
+  /// milliseconds; neither is enforced. Dates are stored as ISO-8601 text, and
+  /// the `(status, captured_at)` index orders that text, which matches
+  /// chronological order only if every value is written in the same form. UTC
+  /// ends in `Z` but local time carries a UTC offset, and the fraction has 3
+  /// digits when the microseconds are zero but 6 otherwise, so the later
+  /// `...00.500001Z` sorts before `...00.500Z`.
   DateTimeColumn get capturedAt => dateTime()();
 
   /// The JSON that the API request body is built from; API-specific fields
