@@ -14,7 +14,7 @@
 | PostGIS | `compose.yaml` の `db` | DBとPostGIS拡張 |
 | マイグレーション | `db/migrations/` | DBスキーマの適用 |
 | OpenAPI | `openapi/openapi.yaml` | Go/Dartクライアントの契約 |
-| Go API | `api/` | `/healthz` と `/readyz` |
+| Go API | `api/` | ヘルスチェックと散歩記録API |
 | Dart APIクライアント | `mobile/packages/api_client/` | OpenAPIから生成した型付きクライアント |
 | Flutterアプリ | `mobile/app/` | Androidの疎通確認画面 |
 
@@ -156,8 +156,9 @@ The health check returned OK.
 
 ## 端末不要の通常検証
 
-`verify`はDB、Androidエミュレータ、実機を必要としない静的検証です。OpenAPI、Go API、
-Dart APIクライアント、Flutterアプリの各検証をまとめて実行します。
+`verify`は開発用DB、Androidエミュレータ、実機を必要としない検証です。使い捨ての
+PostGISコンテナを自動で起動し、OpenAPI、SQLC生成物、Go API、Dart APIクライアント、
+Flutterアプリの各検証をまとめて実行します。Docker Desktopは起動しておいてください。
 
 ```sh
 task verify
@@ -173,7 +174,8 @@ task verify FLUTTER=/private/tmp/flutter-3.47.0/bin/flutter
 順番に実行されます。
 
 - OpenAPIのvalidator検証とRedocly lint
-- Go生成物のドリフト確認、Goテスト、`go vet`
+- SQLC生成物のドリフト確認
+- Go生成物のドリフト確認、Goテスト、使い捨てPostGISでの結合テスト、`go vet`
 - DartクライアントのOpenAPI生成物ドリフト確認、`build_runner`生成物確認、analyze、test
 - Flutterアプリのanalyze、test
 

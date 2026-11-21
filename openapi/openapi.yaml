@@ -67,7 +67,7 @@ paths:
       tags:
         - walk
       operationId: putSession
-      summary: Create or update a walking session start time
+      summary: Create or replay a walking session
       description: |
         Stores the start time for a walking session. The session identifier is
         supplied by the client and authentication is out of scope for this

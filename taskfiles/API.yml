@@ -2,6 +2,7 @@ version: '3'
 
 vars:
   OAPI_CODEGEN_MODULE: 'github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen'
+  POSTGIS_TEST_IMAGE: 'postgis/postgis:16-3.4@sha256:44126d872ac91993766c341e369c539e8196614321765d36a6f1bab0419a5fa5'
 
 tasks:
   generate:
@@ -55,6 +56,14 @@ tasks:
     cmds:
       - go test ./...
 
+  test-integration:
+    desc: 使い捨てPostGISで散歩APIの結合テストを実行する
+    dir: '{{.ROOT_DIR}}'
+    env:
+      POSTGIS_TEST_IMAGE: '{{.POSTGIS_TEST_IMAGE}}'
+    cmds:
+      - ./scripts/test-walk-postgis.sh
+
   vet:
     desc: Go APIをgo vetで検査する
     dir: '{{.ROOT_DIR}}/api'
@@ -72,4 +81,5 @@ tasks:
     cmds:
       - task: generate-check
       - task: test
+      - task: test-integration
       - task: vet

@@ -69,7 +69,7 @@ Class | Method | HTTP request | Description
 [*HealthApi*](doc/HealthApi.md) | [**getHealthz**](doc/HealthApi.md#gethealthz) | **GET** /healthz | Check whether the service is alive
 [*HealthApi*](doc/HealthApi.md) | [**getReadyz**](doc/HealthApi.md#getreadyz) | **GET** /readyz | Check whether the service is ready
 [*WalkApi*](doc/WalkApi.md) | [**putLocation**](doc/WalkApi.md#putlocation) | **PUT** /sessions/{session_id}/locations/{event_id} | Store or replay a location event
-[*WalkApi*](doc/WalkApi.md) | [**putSession**](doc/WalkApi.md#putsession) | **PUT** /sessions/{session_id} | Create or update a walking session start time
+[*WalkApi*](doc/WalkApi.md) | [**putSession**](doc/WalkApi.md#putsession) | **PUT** /sessions/{session_id} | Create or replay a walking session
 [*WalkApi*](doc/WalkApi.md) | [**putSteps**](doc/WalkApi.md#putsteps) | **PUT** /sessions/{session_id}/steps/{event_id} | Create or update a steps event
 
 

@@ -10,11 +10,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yuji-matsunami/teku-dun/api/internal/config"
 	"github.com/yuji-matsunami/teku-dun/api/internal/httpapi"
-	"github.com/yuji-matsunami/teku-dun/api/internal/openapi"
 	"github.com/yuji-matsunami/teku-dun/api/internal/walk"
 	walkpostgres "github.com/yuji-matsunami/teku-dun/api/internal/walk/postgres"
 )
@@ -43,15 +41,12 @@ func run(parent context.Context) error {
 	walkRepository := walkpostgres.NewRepository(db)
 	walkService := walk.NewService(walkRepository)
 
-	requestValidator, err := httpapi.NewOpenAPIRequestValidator()
+	handler := httpapi.NewHandler(postGIS, cfg.DBPingTimeout).WithWalkService(walkService)
+	router, err := httpapi.NewRouter(handler)
 	if err != nil {
 		return fmt.Errorf("OpenAPI request validator setup failed: %w", err)
 	}
 
-	router := chi.NewRouter()
-	router.Use(httpapi.ValidateRequestBody, requestValidator)
-	handler := httpapi.NewHandler(postGIS, cfg.DBPingTimeout).WithWalkService(walkService)
-	openapi.HandlerFromMux(handler, router)
 	server := &http.Server{
 		Addr:              cfg.Address,
 		Handler:           router,

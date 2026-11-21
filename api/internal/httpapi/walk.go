@@ -42,7 +42,7 @@ func writeWalkServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, walk.ErrConflict):
 		writeJSON(w, http.StatusConflict, walkError(conflictCode, conflictMessage))
 	default:
-		// Repository and driver details must never cross the HTTP boundary.
+		// Repositoryやドライバーの詳細をHTTP境界の外へ漏らさない。
 		writeUnavailable(w)
 	}
 }

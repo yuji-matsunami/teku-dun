@@ -93,7 +93,7 @@ class WalkApi {
     return _response;
   }
 
-  /// Create or update a walking session start time
+  /// Create or replay a walking session
   /// Stores the start time for a walking session. The session identifier is supplied by the client and authentication is out of scope for this API contract. A session is the origin for one-minute step intervals; only the final partial interval is allowed by the client contract. The start time is immutable after the first accepted value. The server records the time at which the request is received. 
   ///
   /// Parameters:
